@@ -1,0 +1,11 @@
+﻿ltabphyname,rtabphyname,relationshipname,cardinality,mandatory,ltabcolphyname,rtabcolphyname
+mdruleclass,cointerp,default,One to Many,Yes,classkey,interphrck
+mdinterp,mdrule,default,One to Many,Yes,interpkey,interpkey
+mdrule,cointerp,default,One to Many,Yes,rulekey,rulekey
+mdinterp,sainterp,default,One to Many,Yes,interpkey,interpkey
+featdesc,FEATLINE,default,One to Many,Yes,featkey,FEATKEY
+featdesc,FEATPOINT,default,One to Many,Yes,featkey,FEATKEY
+mapunit,MUPOINT,default,One to Many,Yes,mukey,MUKEY
+mapunit,MULINE,default,One to Many,Yes,mukey,MUKEY
+mapunit,MUPOLYGON,default,One to Many,Yes,mukey,MUKEY
+legend,SAPOLYGON,default,One to Many,Yes,lkey,LKEY
