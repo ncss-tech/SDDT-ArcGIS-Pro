@@ -559,7 +559,8 @@ class buildFGDB(object):
             'Select from downloaded SSURGO datasets',
             'By State(s)',
             'By selected features in Soil Survey boundary layer',
-            'By Geography'
+            'By Geography',
+            'Build CONUS database'
         ]
         self.regions = [
             "Alaska", "Hawaii", "Lower 48 States",
@@ -778,6 +779,9 @@ class buildFGDB(object):
             # else:
             states = {ssa[0:2].upper() for ssa in ssurgo_dirs}
             states = list(states)
+            # Add PRVI if both present
+            if 'PR' in states and 'VI' in states:
+                states.append('PRVI')
             states.sort()
             params[3].filter.list = states
 
@@ -814,6 +818,14 @@ class buildFGDB(object):
             params[11].enabled = True
             params[10].enabled = False
             # params[7].filter.list = []
+        
+        # Choice build CONUS
+        elif params[1].valueAsText == self.options[4]:
+            for i in range(2, 10):
+                params[i].enabled = False
+            params[10].enabled = True
+            params[11].enabled = False
+            params[12].value = "Lower 48 States"
         else:
             for i in range(2, 10):
                 params[i].enabled = False
@@ -900,6 +912,9 @@ class buildFGDB(object):
                 )
             elif not params[11].value:
                 params[11].setErrorMessage('Must specify an Output location')
+        if params[1].value == self.options[4]:
+            if not params[10].value:
+                params[10].setErrorMessage('Must specify an output FGDB')
         # Have they downloaded all selected surveys?
         # Future warning
         # Make sure gdb isn't being specified within an exising gdb
@@ -921,8 +936,12 @@ class buildFGDB(object):
         elif 'SSURGO' in params[1].value:
             option = 0
             path = params[10].valueAsText
-        else: # soil survey layer
+        elif 'By selected features' in params[1].value:
             option = 2
+            path = params[10].valueAsText
+        # build CONUS
+        else:
+            option = 4
             path = params[10].valueAsText
 
         import sddt.construct.fgdb
@@ -950,6 +969,7 @@ class buildFGDB(object):
         if params[13].value:
             import sddt.construct.valu1
             reload(sddt.construct.valu1)
+            v_success = {'both': [], 'dc': [], 'v': [], 'neither': []}
             for gdb_p in gdb_l:
                 complete_b = sddt.construct.valu1.main([
                     gdb_p,
@@ -959,37 +979,49 @@ class buildFGDB(object):
                     valu1_b = arcpy.Exists(gdb_p + "/Valu1")
                     domcom_b = arcpy.Exists(gdb_p + "/DominantComponent")
                     if valu1_b and domcom_b:
-                        arcpy.AddMessage(
-                            "Both the Valu1 and DominantCompoent tables "
-                            "were successfully completed."
-                        )
+                        v_success['both'].append(gdb_p)
                     elif not valu1_b:
-                        arcpy.AddMessage(
-                            "The DominantComponent table successfully completed"
-                        )
-                        arcpy.AddError(
-                            "The Valu1 table was not successfully completed"
-                        )
+                        v_success['dc'].append(gdb_p)
                     elif not domcom_b:
-                        arcpy.AddMessage(
-                            "The Valu1 table successfully completed"
-                        )
-                        arcpy.AddError(
-                            "The DominantComponent table "
-                            "was not successfully completed"
-                        )
+                        v_success['v'].append(gdb_p)
                     else:
-                        arcpy.AddError(
-                            "Neither the Valu1 and DominantCompoent tables "
-                            "were successfully completed."
+                        v_success['neither'].append(gdb_p)
+                else:
+                    v_success['neither'].append(gdb_p)
+            nt = '\n\t'
+            if (both := v_success['both']):
+                arcpy.AddMessage(
+                            "Both the Valu1 and DominantCompoent tables "
+                            "were successfully created for these FGDBs:\n\t"
+                            f"{nt.join(both)}"
                         )
+            if (dc := v_success['dc']):
+                arcpy.AddWarning(
+                            "The Valu1 table successfully created but "
+                            "the DominantComponent table "
+                            "was not successfully created for these FGDBs:"    
+                        )
+                arcpy.AddMessage(f"\n\t{nt.join(dc)}")
+            if (v := v_success['v']):
+                arcpy.AddWarning(
+                            "The DominantComponent table successfully created "
+                            "but the Valu1 table "
+                            "was not successfully created for these FGDBs:"
+                        )
+                arcpy.AddMessage(f"\n\t{nt.join(v)}")
+            if (neither := v_success['neither']):
+                arcpy.AddWarning(
+                            "Neither the DominantComponent or the Valu1 tables "
+                            "were successfully created for these FGDBs:"
+                        )
+                arcpy.AddMessage(f"\n\t{nt.join(neither)}")
+
         return
 
     def postExecute(self, parameters):
         """This method takes place after outputs are processed and
         added to the display."""
         return
-
 
 
 class valu1(object):
@@ -1030,7 +1062,7 @@ class valu1(object):
         """The source code of the tool."""
         import sddt.construct.valu1
         reload(sddt.construct.valu1)
-        gdb_p = params[0].valueAsText
+        gdb_p = params[0].values
         complete_b = sddt.construct.valu1.main([
             gdb_p,
             os.path.dirname(sddt.__file__) + "/construct"
@@ -1073,7 +1105,7 @@ class rasterize(object):
 
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "Create gSSRUGO Raster"
+        self.label = "Create gSSURGO Raster"
         self.description = ("Create gSSURGO, a raster version soil polygons.")
         self.category = '2) Construct Databases'
 
