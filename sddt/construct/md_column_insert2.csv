@@ -1,10 +1,11 @@
 ﻿tabphyname,colsequence,colphyname,collogname,collabel,logicaldatatype,notnull,fieldsize,precision,minimum,maximum,uom,domainname,coldesc
 sainterp,1,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of a record in the Rule table in NASIS.
 cointerp,2,interphrck,interphrc_class_key,Interp High Representative Value Class Key,Short,No,,,,,,,The unique identifier of a record in the mdruleclass table.
+cointerp,7,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of the rule at the top of the interpretation rule hierarchy (the main rule).  Use this key to find the rule names in mdrule.
 mdrule,1,rulename,rule_name,Rule Name,String,No,60,,,,,,A user assigned name (typically connotative) for a particular interpretation rule.
 mdrule,2,ruledepth,rule_depth,Rule Depth,Short,No,,,,,,,"An interpretation rule may contain subordinate rules, which in turn may have subordinate rules.  This is an indicator of the depth within the interpretation hierarchy that a particular rule exists, where zero is the top level."
 mdrule,3,seqnum,sequence_number,Seq,Short,No,,,,,,,Sequential number of the feature being described.
-mdrule,4,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of the rule at the top of the interpretation rule hierarchy (the main rule).  Use this key to find the mail rule in the Component Interpretation table.
+mdrule,4,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of the rule at the top of the interpretation rule hierarchy (the main rule).  Use this key to connect to Component Interpretation table.
 mdrule,5,rulekey,rule_key,Rule Key,Long,Yes,,,,,,,The unique identifier of a record in the Rule table in NASIS.
 mdinterp,1,interpname,interp_name,Interpretation Name,String,Yes,60,,,,,,The connotative name of an interpretation.
 mdinterp,2,interptype,interp_type,Interpretation Type,String,Yes,20,,,,,,"Indicates if the corresponding interpretation is designed as a limitation, suitability or class."
