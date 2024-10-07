@@ -112,8 +112,8 @@ cointerp,defpropdatabool,String,3,String,1,4
 cointerp,incpropdatabool,String,3,String,1,5
 cointerp,rulekey,String,30,Long,,
 cointerp,mrulekey,String,30,Delete,,
-cointerp,cokey,String,30,Long,,7
-cointerp,cointerpkey,String,30,Long,,8
+cointerp,cokey,String,30,Long,,8
+cointerp,cointerpkey,String,30,Long,,9
 comonth,month,String,254,String,10,
 comonth,flodfreqcl,String,254,String,15,
 comonth,floddurcl,String,254,String,35,
