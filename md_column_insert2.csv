@@ -1,0 +1,44 @@
+﻿tabphyname,colsequence,colphyname,collogname,collabel,logicaldatatype,notnull,fieldsize,precision,minimum,maximum,uom,domainname,coldesc
+sainterp,1,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of a record in the Rule table in NASIS.
+cointerp,2,interphrck,interphrc_class_key,Interp High Representative Value Class Key,Short,No,,,,,,,The unique identifier of a record in the mdruleclass table.
+cointerp,7,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of the rule at the top of the interpretation rule hierarchy (the main rule).  Use this key to find the rule names in mdrule.
+mdrule,1,rulename,rule_name,Rule Name,String,No,60,,,,,,A user assigned name (typically connotative) for a particular interpretation rule.
+mdrule,2,ruledepth,rule_depth,Rule Depth,Short,No,,,,,,,"An interpretation rule may contain subordinate rules, which in turn may have subordinate rules.  This is an indicator of the depth within the interpretation hierarchy that a particular rule exists, where zero is the top level."
+mdrule,3,seqnum,sequence_number,Seq,Short,No,,,,,,,Sequential number of the feature being described.
+mdrule,4,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of the rule at the top of the interpretation rule hierarchy (the main rule).  Use this key to connect to Component Interpretation table.
+mdrule,5,rulekey,rule_key,Rule Key,Long,Yes,,,,,,,The unique identifier of a record in the Rule table in NASIS.
+mdinterp,1,interpname,interp_name,Interpretation Name,String,Yes,60,,,,,,The connotative name of an interpretation.
+mdinterp,2,interptype,interp_type,Interpretation Type,String,Yes,20,,,,,,"Indicates if the corresponding interpretation is designed as a limitation, suitability or class."
+mdinterp,3,interpdesc,interp_description,Interpretation Description,String,No,120000,,,,,,A narrative text description of the logic used to generate an interpretation.
+mdinterp,4,interpdesigndate,interp_design_date,Interpretation Design Date,Date,Yes,,,,,,,The date and time that the logic of an interpretation was last modified.
+mdinterp,5,interpgendate,interp_generation_date,Interpretation Generation Date,Date,Yes,,,,,,,The date and time that the corresponding interpretive results for this interpretation were generated.
+mdinterp,6,interpmaxreasons,interp_max_reasons,Interpretation Maximum Reasons,Short,No,,,,,,,The maximum number of reasons recorded for the corresponding soil interpretation.
+mdinterp,7,interpkey,interp_key,Interpretation Key,Long,Yes,,,,,,,The unique identifier of a record in the Rule table in NASIS.
+mdruleclass,1,classtxt,class_text,Rule Class Text,String,No,254,,,,,,The rating class term for interpretation rating value from the coninterp table.
+mdruleclass,2,classkey,class_key,Rule Class Key,Long,Yes,,,,,,,The unique identifier of a record.
+FEATLINE,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+FEATLINE,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+FEATLINE,3,FEATSYM,feature_symbol,Feature Symbol,String,Yes,3,,,,,,"A symbol that, within the context of a particular soil survey area, uniquely identifies a point or line spot feature."
+FEATLINE,4,FEATKEY,feature_key,Feature Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Feature Description table.
+FEATPOINT,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+FEATPOINT,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+FEATPOINT,3,FEATSYM,feature_symbol,Feature Symbol,String,Yes,3,,,,,,"A symbol that, within the context of a particular soil survey area, uniquely identifies a point or line spot feature."
+FEATPOINT,4,FEATKEY,feature_key,Feature Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Feature Description table.
+MULINE,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+MULINE,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+MULINE,3,MUSYM,mapunit_symbol,Map Unit Symbol,String,Yes,6,,,,,,The symbol used to uniquely identify the soil mapunit in the soil survey.
+MULINE,4,MUKEY,mapunit_key,Map Unit Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Mapunit table.
+MUPOINT,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+MUPOINT,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+MUPOINT,3,MUSYM,mapunit_symbol,Map Unit Symbol,String,Yes,6,,,,,,The symbol used to uniquely identify the soil mapunit in the soil survey.
+MUPOINT,4,MUKEY,mapunit_key,Map Unit Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Mapunit table.
+MUPOLYGON,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+MUPOLYGON,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+MUPOLYGON,3,MUSYM,mapunit_symbol,Map Unit Symbol,String,Yes,6,,,,,,The symbol used to uniquely identify the soil mapunit in the soil survey.
+MUPOLYGON,4,MUKEY,mapunit_key,Map Unit Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Mapunit table.
+SAPOLYGON,1,AREASYMBOL,area_symbol,Area Symbol,String,Yes,10,,,,,,"A symbol that uniquely identifies a single occurrence of a particular type of area (e.g. Lancaster Co., Nebraska is NE109)."
+SAPOLYGON,2,SPATIALVER,spatial_version,Spatial Version,Short,No,,,,,,,A sequential integer number used to denote the serial version of the spatial data for a soil survey area.
+SAPOLYGON,3,LKEY,legend_key,Legend Key,Long,Yes,,,,,,,A non-connotative string of characters used to uniquely identify a record in the Legend table.
+version,1,type,type,Type,String,No,25,,,,,,General category of the versioned item.
+version,2,name,name,Name,String,Yes,50,,,,,,"Name or label of the application, tool, or datasource."
+version,3,version,version,Version,String,No,10,,,,,,Version number.
