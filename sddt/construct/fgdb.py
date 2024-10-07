@@ -1,11 +1,30 @@
+#! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Created on Tue May 23 11:06:21 2023
+Create gSSURGO File Geodatabase
+Build gSSURGO File Geodatabase in ArcGIS Pro
 
-@author: Alexander.Stum
+@author: Alexander Stum
+@maintainer: Alexander Stum
+    @title:  GIS Specialist & Soil Scientist
+    @organization: National Soil Survey Center, USDA-NRCS
+    @email: alexander.stum@usda.gov
+@modified 10/04/2024
+    @by: Alexnder Stum
+@version: 0.2
 
-Numpy Dostring format
-ImportXMLWorkspaceDocument command requires Standard or Advanced license
+# ---
+Updated 10/04/2024
+- Changed SDA query for developing list of soil surveys for a state to 
+    look at legend overlap, not areasymbol.
+- Corrected handling of signaling which FGDB were not successful.
+- Several Pacific Islands were missing from states dictionary.
+- Fixed file name references to xml files.
+- Added condition to handle PR and VI as single state database request.
+- Fixed error related to finding new rule classes
+- Added interp key to gSSURGO 2.0
+- Added CONUS build option
+- Added 0.01s time outs to allow cursors to switch off
 """
 
 # Import system modules
@@ -38,19 +57,21 @@ states = {
     'AK': 'Alaska', 'AL': 'Alabama', 'AR': 'Arkansas', 'AS': 'American Samoa',
     'AZ': 'Arizona', 'CA': 'California', 'CO': 'Colorado', 'CT': 'Connecticut',
     'DC': 'District of Columbia', 'DE': 'Delaware', 'FL': 'Florida',
-    'GA': 'Georgia', 'GU': 'Guam', 'HI': 'Hawaii', 'IA': 'Iowa', 'ID': 'Idaho',
-    'IL': 'Illinois', 'IN': 'Indiana', 'KS': 'Kansas', 'KY': 'Kentucky',
-    'LA': 'Louisiana', 'MA': 'Massachusetts', 'MD': 'Maryland', 'ME': 'Maine',
-    'MI': 'Michigan', 'MN': 'Minnesota', 'MO': 'Missouri', 'MS': 'Mississippi',
+    'FM': 'Federated States of Micronesia', 'GA': 'Georgia', 'GU': 'Guam',
+    'HI': 'Hawaii', 'IA': 'Iowa', 'ID': 'Idaho', 'IL': 'Illinois',
+    'IN': 'Indiana', 'KS': 'Kansas', 'KY': 'Kentucky', 'LA': 'Louisiana', 
+    'MA': 'Massachusetts', 'MD': 'Maryland', 'ME': 'Maine',
+    'MH': 'Marshall Islands', 'MI': 'Michigan', 'MN': 'Minnesota',
+    'MO': 'Missouri', 'MP': 'Northern Mariana Islands', 'MS': 'Mississippi',
     'MT': 'Montana', 'NC': 'North Carolina', 'ND': 'North Dakota',
     'NE': 'Nebraska', 'NH': 'New Hampshire', 'NJ': 'New Jersey',
     'NM': 'New Mexico', 'NV': 'Nevada', 'NY': 'New York', 'OH': 'Ohio',
     'OK': 'Oklahoma', 'OR': 'Oregon', 'PA': 'Pennsylvania',
-    'PRUSVI': "Puerto Rico and U.S. Virgin Islands", 'RI': 'Rhode Island',
+    'PR': "Puerto Rico", 'PW': 'Palau', 'RI': 'Rhode Island', 
     'SC': 'South Carolina', 'SD': 'South Dakota', 'TN': 'Tennessee',
-    'TX': 'Texas', 'UT': 'Utah', 'VA': 'Virginia', 'VT': 'Vermont',
-    'WA': 'Washington', 'WI': 'Wisconsin', 'WV': 'West Virginia',
-    'WY': 'Wyoming'
+    'TX': 'Texas', 'UT': 'Utah', 'VA': 'Virginia', 'VI': 'Virgin Islands',
+    'VT': 'Vermont', 'WA': 'Washington', 'WI': 'Wisconsin',
+    'WV': 'West Virginia', 'WY': 'Wyoming'
 }
 
 class xml:
@@ -71,9 +92,9 @@ class xml:
         elif aoi == "Alaska":
             self.xml = path_i + "Alaska_AlbersNAD1983.xml"
         elif aoi == "Puerto Rico and U.S. Virgin Islands":
-            self.xml = path_i + "PRUSVI_StateNAD83.xml"
+            self.xml = path_i + "PRUSVI_StateNAD1983.xml"
         else:
-            self.xml = path_i + "_Geographic_WGS1984.xml"
+            self.xml = path_i + "Geographic_WGS1984.xml"
         self.exist = os.path.isfile(self.xml)
 
 
@@ -197,6 +218,50 @@ def getSSAList(input_p: str) -> Set[str,]:
     return present_ssa
 
 
+
+def sda_ssa_list(state):
+    try:
+        url = r'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest'
+        if state == 'PRVI':
+            la_areaname = ("(la.areaname = 'Puerto Rico' "
+                            "OR la.areaname = 'Virgin Islands')")
+        else:
+            la_areaname = f"la.areaname = '{states[state]}'"
+        sQuery = (
+            "SELECT l.areasymbol "
+            "FROM legend l "
+            "INNER JOIN  laoverlap la ON l.lkey = la.lkey "
+            "AND la.areatypename = 'State or Territory' "
+            f"AND {la_areaname}"
+            "WHERE l.areatypename = 'Non-MLRA Soil Survey Area' "
+            "ORDER BY l.areasymbol"
+        )
+
+        # Create request using JSON, return data as JSON
+        dRequest = dict()
+        dRequest["format"] = "JSON"
+        dRequest["query"] = sQuery
+        jData = json.dumps(dRequest)
+        # Send request to SDA Tabular service using urllib2 library
+        jData = jData.encode('ascii')
+        response = urlopen(url, jData)
+        jsonString = response.read()
+
+        # Convert the returned JSON string into a Python dictionary.
+        data = json.loads(jsonString)
+        del jsonString, jData, response
+        return data
+    
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return None
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return None
+
+
 def createGDB(gdb_p: str, inputXML: xml, label: str) -> str:
     """Creates the SSURGO file geodatabase using an xml workspace file to 
     create tables, features, and spatila relations.
@@ -310,8 +375,10 @@ def importCoint(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
+        time.sleep(0.01)
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
+        nccpi_sub = ['37149', '37150', '44492', '57994']
         table = 'cointerp'
         tab_p = f"{gdb_p}/{table}"
         cols = table_d[table][2]
@@ -329,7 +396,8 @@ def importCoint(ssa_l: list[str],
             )
             if light_b:
                 for row in csvReader:
-                    if row[1] == row[4] or row[1] == "54955":
+                    if (row[1] == row[4] 
+                        or (row[1] == "54955" and row[4] in nccpi_sub)):
                         # Slice out excluded elements
                         row = row[:7] + row[11:13] + row[15:]
                         # replace empty sets with None
@@ -404,6 +472,7 @@ def importList(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
+        time.sleep(0.01)
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
         txt = table_d[table][0]
@@ -487,6 +556,7 @@ def importSet(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
+        time.sleep(0.01)
         csv.field_size_limit(2147483647)
         # 'distsubinterpmd'
         tabs_l = ['distinterpmd', 'sdvattribute', 'sdvfolderattribute']
@@ -568,6 +638,7 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
         and a message.
     """
     try:
+        time.sleep(0.01)
         # First read in mdstattabs: mstab table into 
         # There should be 75 tables, 6 of which are spatial, so 69
         # Then read tables from gdb
@@ -1166,6 +1237,7 @@ def gSSURGO(input_p: str,
         }
         # threadCount = 1 #psutil.cpu_count() // psutil.cpu_count(logical=False)
         # arcpy.AddMessage(f"{threadCount= }")
+        import_all = True
         ti = time.time()
         import_jobs = funYield(importList, paramSet, constSet)
         for paramBack, output in import_jobs:
@@ -1180,7 +1252,7 @@ def gSSURGO(input_p: str,
                 if output:
                     # arcpy.AddError(f"Failed to populate {paramBack['table']}")
                     arcpy.AddError(output)
-                    return
+                    import_all = False
             except GeneratorExit:
                 arcpy.AddWarning("passed")
                 arcpy.AddWarning(f"{paramBack}")
@@ -1189,6 +1261,8 @@ def gSSURGO(input_p: str,
         import_jobs.close()
         del import_jobs
         gc.collect()
+        if not import_all:
+            return False
         # arcpy.AddMessage(f"time: {time.time() - ti}")
 
         if not versionTab(input_p, gdb_p, gssurgo_v, light_b, v, survey_l[0]):
@@ -1234,7 +1308,7 @@ def gSSURGO(input_p: str,
 
         q = "areatypename = 'State or Territory'"
         sCur = arcpy.da.SearchCursor(f"{gdb_p}/laoverlap", 'areasymbol', q)
-        state_overlaps = {st for st, in sCur}
+        state_overlaps = {states[st] for st, in sCur}
         del sCur
         state_overlaps = ', '.join(state_overlaps)
         # Update metadata for the geodatabase and all featureclasses
@@ -1644,6 +1718,7 @@ def schemaChange(
             csv_r = csv.reader(csv_f, delimiter=',')
             hdr = next(csv_r)
             for class_txt, class_i in csv_r:
+                class_i = int(class_i)
                 iCur.insertRow([class_txt, class_i])
                 class_d[class_txt] = class_i
         class_sz = len(class_d)
@@ -1653,6 +1728,7 @@ def schemaChange(
         # Read cinterp.txt
             # exclude non-main rule cotinterps if light
             # except for NCCPI rules (main rule 54955)
+        nccpi_sub = ['37149', '37150', '44492', '57994']
         arcpy.SetProgressorLabel("importing cointerp")
         co_tbl = 'cointerp'
         q = "tabphyname = 'cointerp'"
@@ -1695,7 +1771,7 @@ def schemaChange(
                 if interp_k != rule_k:
                     # An NCCPI rule (some SDV Attributes based on them)
                     # OR not light (all rules included in cointerp)
-                    if (interp_k == '54955') or not light:
+                    if rule_k in nccpi_sub or not light:
                         class_txt = row[12]
                         class_k = class_d.get(class_txt)
                         # Possible that new classes come with new interps
@@ -1709,7 +1785,7 @@ def schemaChange(
                             )
                         nulls = [v.strip() for v in row[15:18]]
                         iCur.insertRow([
-                            row[11], class_k, *nulls, row[4], row[0],
+                            row[11], class_k, *nulls, rule_k, interp_k, row[0],
                             row[18]
                         ])
                 # an interp
@@ -1731,7 +1807,8 @@ def schemaChange(
                     # some zeros have a space after them
                     nulls = [v.strip() for v in row[15:18]]
                     iCur.insertRow([
-                        row[11], class_k, *nulls, rule_k, row[0], row[18]
+                        row[11], class_k, *nulls, rule_k, interp_k, row[0], 
+                        row[18]
                     ])
         arcpy.AddMessage("\tSuccessfully populated cointerp")
         del iCur
@@ -1739,7 +1816,7 @@ def schemaChange(
         if len(class_d) != class_sz:
             arcpy.AddMessage(f"Adding {len(class_d)} new interp classes")
             iCur = arcpy.da.InsertCursor(crt_p, ['classtxt', 'classkey'])
-            for class_txt, class_k in class_d:
+            for class_txt, class_k in class_d.items():
                 iCur.insertRow([class_txt, class_k])
             del iCur
         # Delete rulekey if light
@@ -1894,7 +1971,7 @@ def versionTab(input_p, gdb_p, gssurgo_v, light, script_v, ssa):
 def main(args):
     # %% m
     try:
-        v = '0.1.7'
+        v = '0.2'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
@@ -1937,26 +2014,8 @@ def main(args):
         if option == 1:
             state_l = state_str.split(';')
             present_ssa = getSSAList(input_p)
-            url = r'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest'
             for state in state_l:
-                sQuery = (
-                    "SELECT AREASYMBOL FROM SASTATUSMAP WHERE AREASYMBOL LIKE "
-                    f"'{state}%' ORDER BY AREASYMBOL"
-                )
-
-                # Create request using JSON, return data as JSON
-                dRequest = dict()
-                dRequest["format"] = "JSON"
-                dRequest["query"] = sQuery
-                jData = json.dumps(dRequest)
-                # Send request to SDA Tabular service using urllib2 library
-                jData = jData.encode('ascii')
-                response = urlopen(url, jData)
-                jsonString = response.read()
-
-                # Convert the returned JSON string into a Python dictionary.
-                data = json.loads(jsonString)
-                del jsonString, jData, response
+                data = sda_ssa_list(state)
                 # Find data section (key='Table')
                 if "Table" in data:
                     # Data as a list of lists. All values come back as string.
@@ -2094,7 +2153,7 @@ def main(args):
                     fail_l.append(gdb_p)
 
         # By selected surveys
-        else:
+        elif option == 0:
             gdb_p = output_p
             if len(survey_l := survey_str.split(';')):
                 arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
@@ -2109,10 +2168,53 @@ def main(args):
             else:
                 arcpy.AddError("No surveys available to create specified gdb.")
                 return False
+        
+        # By CONUS
+        else:
+            gdb_p = output_p
+            survey_l = []
+            # CONUS states
+            state_l = [
+                'AL', 'AR', 'AZ', 'CA', 'CO', 'CT', 'DC', 'DE', 'FL', 'GA',
+                'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME',
+                'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ',
+                'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD',
+                'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY'
+            ]
+            present_ssa = getSSAList(input_p)
+            for state in state_l:
+                data = sda_ssa_list(state)
+                # Find data section (key='Table')
+                if "Table" in data:
+                    # Data as a list of lists. All values come back as string.
+                    ssa_s = {ssa.lower() for ssa, in data["Table"]}
+                    if (missing := ssa_s - present_ssa):
+                        arcpy.AddWarning(
+                            f"Incomplete set of SSURGO datasets for {state}."
+                            f"\n{missing= }")
+                        return False
+                    else:
+                        survey_l.extend(ssa_s)
+                else:
+                    arcpy.AddWarning(
+                        f'Unable to determine which surveys are within {state}.'
+                        ' Geodatabase will not be created.'
+                    )
+            
+            arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
+            gdb_b = gSSURGO(
+                input_p, survey_l, gdb_p, aoi, state, light_b, module_p,
+                gssurgo_v, v
+            )
+            if gdb_b:
+                gdb_l.append(gdb_p)
+            else:
+                fail_l.append(gdb_p)
+                
 
         if gdb_l:
             arcpy.AddMessage(
-                "Successfully created the following gSSURGO geodatabases:"
+                "\nSuccessfully created the following gSSURGO geodatabases:"
             )
             for gdb_p in gdb_l:
                 gdb_n = os.path.basename(gdb_p)
