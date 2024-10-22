@@ -10,11 +10,13 @@ Created on: 04/19/2023
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
 
-@modified 11/03/2023
+@modified 10/03/2023
     @by: Alexnder Stum
-@version: 0.5
+@version: 0.7
 
 # ---
+Updated 10/03/2024 - Alexander Stum
+- Fixed error message for 400 Bad Request
 Updated 03/01/2024 - Alexander Stum
 - Specified a max number of threads to 6, more than that it becomes 
 inefficient.
@@ -381,7 +383,7 @@ def GetDownload(areaSym, surveyDate, outFolder, newFolder, template_b):
             zipURL = baseURL + zipName
             r = requests.get(zipURL)
         if r.status_code == 400:
-            msgApp(f'Bad Request: {e}')
+            msgApp(f'Bad Request')
             msgApp(f"\n{zipURL}")
             return [2, msgs]
         z = zipfile.ZipFile(io.BytesIO(r.content))
@@ -522,7 +524,7 @@ def ProcessSurvey(outputFolder, areaSym, surveyInfo, template_b, overwrite_b):
 
 def main(args):
     try:
-        v = 0.6
+        v = 0.7
         arcpy.AddMessage(f"version {v}")
 
         # ---- Parameters
