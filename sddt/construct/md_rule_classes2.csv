@@ -2232,3 +2232,20 @@ SOC >50-75 kg/m,2230
 SOC >75-100 kg/m2,2231
 SOC >100-250 kg/m2,2232
 Subsurface flow to surface water,2233
+Soil Veg. Group F - Salinity or Alkalinity Limitation,2234
+Very Low Runoff,2235
+Negligible Runoff,2236
+Not Rated - Check Data,2237
+Soil Veg. group J - Misc. Area/Severe Ltds./On-Site Required,2238
+Very High Runoff,2239
+Medium Runoff,2240
+Soil Veg. Group B - Droughtiness Limitation,2241
+Soil Veg. Group A - All Adapted Plants,2242
+Low Runoff,2243
+Soil Veg. group I - Serpentinite Limitation,2244
+Soil Veg. Group E - Wetness Limitation,2245
+Soil Veg. Group G - Soil Depth Limitation,2246
+High Runoff,2247
+Soil Veg. Group D - Claypan Limitation,2248
+Soil Veg. Group H - Low pH Limitation,2249
+Soil Veg. Group C - Fine Texture Limitation,2250
