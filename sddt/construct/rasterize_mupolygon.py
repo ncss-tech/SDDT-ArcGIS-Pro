@@ -12,13 +12,18 @@ Rasterize SSURGO soil polgon feature to a gSSURGO raster dataset.
     @email: alexander.stum@usda.gov
 @modified 10/04/2024
     @by: Alexnder Stum
-@version: 0.2
+@version: 0.3
 
+# ---
+Updated 10/16/2024
+- Converted workspace variable from geoprocessing object to string path
 # ---
 Updated 10/02/2024
 - Changed cell assignment paramter in Polygon to Raster function from 
     Cell Center to Maximum combined area to better generalize patterned
     areas
+# --- Updated 10/08/2024
+- Updated Metadata elements
 """
 
 import sys
@@ -124,15 +129,15 @@ def updateMetadata(
     """Creates metadata for the newly created gSSURGO raster from 
     FGDC_CSDGM xml template
 
-Replaces xx<keywords>xx in template
-xxSTATExx : State or states from legend overlap table (laoverlap)
-xxSURVEYSxx : String listing all the soil survey areas
-xxTODAYxx : Todays date
-xxFYxx : mmyyyy format, to signify vintage of SSURGO data
-xxENVxx : Windows, ArcGIS Pro, and Python version information
-xxNAMExx : Name of the gSSURGO raster dataset
-xxDBxx : Database the SSURGO data was sourced from
-xxVERxx : Version of that database
+    Replaces xx<keywords>xx in template
+    xxSTATExx : State or states from legend overlap table (laoverlap)
+    xxSURVEYSxx : String listing all the soil survey areas
+    xxTODAYxx : Todays date
+    xxFYxx : mmyyyy format, to signify vintage of SSURGO data
+    xxENVxx : Windows, ArcGIS Pro, and Python version information
+    xxNAMExx : Name of the gSSURGO raster dataset
+    xxDBxx : Database the SSURGO data was sourced from
+    xxVERxx : Version of that database
 
     Parameters
     ----------
@@ -156,10 +161,10 @@ xxVERxx : Version of that database
 
     try:
         arcpy.SetProgressor("default", "Updating raster metadata")
-        
+        gdb_n = os.path.basename(wksp)
         # Define input and output XML files
         # the metadata xml that will provide the updated info
-        meta_import = env.scratchFolder + "/xxImport.xml"
+        meta_import = env.scratchFolder + f"/xxImport_{gdb_n}.xml"
         # original template metadata in script directory
         meta_export = f"{script_p}/gSSURGO_MapunitRaster.xml"
         # Cleanup output XML files from previous runs
@@ -629,7 +634,7 @@ def rasterize(
                 ) as sCur:
                 # f"{rec[0]} ({str(rec[1]).split()[0]})"
                 exp_l = [rec[0] for rec in sCur]
-            survey_str = ", ".join(exp_l)
+            survey_str = ", ".join(sorted(exp_l))
             meta_msg = updateMetadata(
                 wksp, rast_p, survey_str, cell_str, script_p)
             arcpy.SetProgressorLabel("Compacting database...")
@@ -701,12 +706,13 @@ def main(
     """
 
     try:
-        version = '0.2'
+        version = '0.3'
         arcpy.AddMessage(f"Create SSURGO raster, {version = !s}")
         env.overwriteOutput= True
 
         bad_apples = []
         for wksp_p in wksp_l:
+            wksp_p = f"{wksp_p}"
             conversion_b = rasterize(
                 wksp_p, mu_n, resolution, external, script_p
             )
