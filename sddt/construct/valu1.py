@@ -8,19 +8,17 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@Version: 0.1
+@modified 10/04/2024
+    @by: Alexnder Stum
+@version: 0.3
 
-
-So if the component has 
-0 - 5 Oe awc: Null
-5 - 20 A awc: 0.3
- 
-Then AWS for 0-20 is 45mm and the thickness for 0-20 would 15 cm
+# ---
+Updated 10/04/2024
+- Enabled it to batch
 """
 
 import arcpy
 from itertools import groupby
-from itertools import zip_longest as zipl
 import sys
 import traceback
 import numpy as np
@@ -587,7 +585,10 @@ def horzAg(
 
 
 def nccpiAg(
-        nccpi_i: Iterator[list[Key, float, float, float, float, float]]
+        nccpi_i: Iterator[list[
+            tuple[Key, float], tuple[Key, float], tuple[Key, float], 
+            tuple[Key, float], tuple[Key, float]
+        ]]
     ) -> n5:
     """Retrive and order NCCPI for each component.
 
@@ -604,11 +605,21 @@ def nccpiAg(
         Numpy array with 5 floats values:
         NCCPI values ordered: corn, soy, cotton, small grain, NCCPI
     """
-    sg, cotton, soy, nccpi, corn = list(nccpi_i)
-    # strip rule key as they are now sorted
-    return np.array(
-        [corn[1], soy[1], cotton[1], sg[1], nccpi[1]], dtype= np.float32
-    )
+    try:
+        # arcpy.AddWarning(f"{list(nccpi_i)}")
+        sg, cotton, soy, nccpi, corn = list(nccpi_i)
+        # strip rule key as they are now sorted
+        return np.array(
+            [corn[1], soy[1], cotton[1], sg[1], nccpi[1]], dtype= np.float32
+        )
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return False
 
 
 def compAg(
@@ -818,10 +829,8 @@ def compAg(
         return () # msg + f"{nccpi_d[cokey]=}; {cokey=}"
 
 
-def main(args):
+def batch(gdb_p, module_p):
     try:
-        gdb_p = args[0] # r'D:\geodata\soils\gSSURGO\test\gSSURGO_DC.gdb' # 
-        module_p = args[1] # r'D:\tools\NRCSbin\Soil-Data-Development-Tools---ArcGIS-Pro_AKS\sddt\construct' #
         d_ranges = (
             (0,5), (5, 20), (20, 50), (50, 100), (100, 150), (150, 999),
             (0, 20), (0, 30), (0, 100), (0, 150), (0, 999)
@@ -830,7 +839,7 @@ def main(args):
         arcpy.env.overwriteOutput = True
         where = np.where
         isnan = np.isnan
-        arcpy.AddMessage(f"{gdb_p = !s}")
+        arcpy.AddMessage(f"\n{gdb_p = !s}")
         # tables needed
         # table: [[Fields], 'query', [sql clause]]
         in_table = 'in_table'
@@ -843,12 +852,9 @@ def main(args):
                 field_names: ['version'], 
                 where_clause:"name = 'gSSURGO'" 
             }})
-        arcpy.AddMessage(f"gSSURGO version {gssurgo_v}")
+        arcpy.AddMessage(f"\tgSSURGO version {gssurgo_v}")
         
         if gssurgo_v == '2.0':
-            # 37149: 'small grain', 37150: 'cotton', 44492: 'soy', 
-            # 54955: 'NCCPI', 57994: 'corn'
-            nccpi_keys = (37149, 37150, 44492, 54955, 57994)
             arcpy.management.ImportXMLWorkspaceDocument(
                 gdb_p, f"{module_p}/valu1_v2.xml", "SCHEMA_ONLY"
             )
@@ -856,7 +862,6 @@ def main(args):
                 gdb_p, f"{module_p}/DominantComponent_v2.xml", "SCHEMA_ONLY"
             )
         else:
-            nccpi_keys = ('37149', '37150', '44492', '54955', '57994')
             arcpy.management.ImportXMLWorkspaceDocument(
                 gdb_p, f"{module_p}/valu1_v1.xml", "SCHEMA_ONLY"
             )
@@ -889,7 +894,7 @@ def main(args):
                     'om_r', 'dbthirdbar_r', 'ec_r', 'ph1to1h2o_r', 'awc_r'
                 ],
                 where_clause: "hzdept_r IS NOT NULL AND hzdepb_r IS NOT NULL",
-                sql_clause: [None, "ORDER BY cokey, hzdept_r ASC"]
+                sql_clause: [None, "ORDER BY cokey ASC, hzdept_r ASC"]
             },
             "chtexturegrp": {
                 in_table: gdb_p + '/chtexturegrp',
@@ -906,12 +911,6 @@ def main(args):
                     "'Undecomposed plant material', 'Muck', 'Mucky peat', "
                     "'Peat', 'Coprogenous earth')"
                 )
-            },
-            "cointerp": {
-                in_table: gdb_p + '/cointerp',
-                field_names: ['cokey', 'interphr'],
-                where_clause: f"rulekey IN {nccpi_keys}",
-                sql_clause: [None, "ORDER BY cokey ASC, rulekey ASC"]
             },
             'component1': {
                 in_table: gdb_p + '/component',
@@ -991,7 +990,24 @@ def main(args):
                     "attributename like "
                     "'National Commodity Crop Productivity Index%'"
         )}}
-    
+
+        if gssurgo_v == '2.0':
+            nccpi_r = "(37149, 37150, 44492, 54955, 57994)"
+            tabs_d['cointerp'] = {
+                in_table: gdb_p + '/cointerp',
+                field_names: ['cokey', 'interphr'],
+                where_clause: f"interpkey = 54955 AND rulekey IN {nccpi_r}",
+                sql_clause: [None, "ORDER BY cokey ASC, rulekey ASC"]
+            }
+        else:
+            nccpi_r = "('37149', '37150', '44492', '54955', '57994')"
+            tabs_d['cointerp'] =  {
+                in_table: gdb_p + '/cointerp',
+                field_names: ['cokey', 'interphr'],
+                where_clause: f"mrulekey = '54955' AND rulekey IN {nccpi_r}",
+                sql_clause: [None, "ORDER BY cokey ASC, rulekey ASC"]
+            }
+
         # components that have a histic epipedon
         with arcpy.da.SearchCursor(**tabs_d['codiagfeatures']) as sCur:
             hist_keys = {cokey for cokey, in sCur}
@@ -1115,6 +1131,19 @@ def main(args):
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return False
+
+def main(args):
+    gdbs = args[0]
+    module_p = args[1]
+    
+    if type(gdbs) == str:
+        gdb_p = gdbs
+        return batch(gdb_p, module_p)
+    else:
+        for gdb in gdbs:
+            d = arcpy.Describe(gdb)
+            gdb_p = d.catalogPath
+            batch(gdb_p, module_p)
 
 
 if __name__ == '__main__':
