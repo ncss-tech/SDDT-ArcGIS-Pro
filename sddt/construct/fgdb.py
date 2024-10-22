@@ -9,12 +9,27 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 10/04/2024
+@modified 10/08/2024
     @by: Alexnder Stum
-@version: 0.2
+@version: 0.4
+
 
 # ---
-Updated 10/04/2024
+Updated 10/11/22; v 0.4
+- Parallelized the appending process of vector features where there are more
+than 50 surveys. Two functions `append_ssa` and `dissolve_ssa` are called 
+from a new module build_parallel. Two helper functions, `big_append` and 
+`big_mu_append` created to call these functions using concurrent.futures.
+- Removed XY precision and tolerance environmental setting. It isn't 
+necessary as its inherited from template and it adversely affected 
+wGS84 datasets.
+- import list can now handle reading in fields that are too long
+- Added an Edit session as in some instances the gdb was locking out the
+insert cursor
+- Added epsg and transformation information to xml class to assist with new
+append functions
+# ---
+Updated 10/04/2024; v 0.3
 - Changed SDA query for developing list of soil surveys for a state to 
     look at legend overlap, not areasymbol.
 - Corrected handling of signaling which FGDB were not successful.
@@ -25,6 +40,8 @@ Updated 10/04/2024
 - Added interp key to gSSURGO 2.0
 - Added CONUS build option
 - Added 0.01s time outs to allow cursors to switch off
+# --- Updated 10/08/2024
+- Updated Metadata elements
 """
 
 # Import system modules
@@ -45,11 +62,14 @@ import traceback
 import xml.etree.cElementTree as ET
 from importlib import reload
 from urllib.request import urlopen
-from typing import Any, Callable, Generator, Generic, Iterator, TypeVar, Set
+from typing import Any, Callable, TypeVar, Set
 
 import arcpy
 import psutil
 from arcpy import env
+import sddt.construct.build_parallel as bp
+reload(bp)
+# from sddt.construct import build_parallel as bp
 
 Tist = TypeVar("Tist", tuple, list)
 
@@ -87,14 +107,24 @@ class xml:
         # an empty geodatabase
         if aoi == "Lower 48 States":
             self.xml = path_i + "CONUS_AlbersNAD1983.xml"
+            self.tm = 'WGS_1984_(ITRF00)_To_NAD_1983'
+            self.epsg = 5070
         elif aoi == "Hawaii":
             self.xml = path_i + "Hawaii_AlbersWGS1984.xml"
+            self.tm = None
+            self.epsg = 102007
         elif aoi == "Alaska":
             self.xml = path_i + "Alaska_AlbersNAD1983.xml"
+            self.tm = 'WGS_1984_(ITRF00)_To_NAD_1983'
+            self.epsg = 3338
         elif aoi == "Puerto Rico and U.S. Virgin Islands":
             self.xml = path_i + "PRUSVI_StateNAD1983.xml"
+            self.tm = 'WGS_1984_(ITRF00)_To_NAD_1983'
+            self.epsg = 32161
         else:
             self.xml = path_i + "Geographic_WGS1984.xml"
+            self.tm = 'WGS_1984_(ITRF00)_To_NAD_1983'
+            self.epsg = 4326
         self.exist = os.path.isfile(self.xml)
 
 
@@ -146,6 +176,23 @@ def arcpyErr(func: str) -> str:
         return msgs
     except:
         return "Error in arcpyErr method"
+
+
+# def fld_length(row, tab_p, fld, fld_dict, exc):
+#     if "Field length exceeded" in exc:
+#         result = re.search(f'Field:(.*). Value', exc)
+#         fld = result.group(1)
+#         row = tuple(v or None for v in row)
+#         row_l = len(row)
+#         if fld in fld_dict:
+#             fld_dict[fld][1] = max(fld_dict[fld][1], row_l)
+#         else:
+#             # if not tab_flds:
+#             tab_flds = {f.name: f.length for f in arcpy.Describe(tab_p).fields}
+#             fld_dict[fld] = (tab_flds[fld], row_l)
+#         return row[:tab_flds[fld]]        
+
+
 
 def funYield(
         fn: Callable, iterSets: Tist, #[dict[str, Any]]
@@ -218,8 +265,20 @@ def getSSAList(input_p: str) -> Set[str,]:
     return present_ssa
 
 
+def sda_ssa_list(state: str) -> str:
+    """Produces an output with the list of soil survey areas that overlap
+    a state. This function sends a query to Soil Data Access
 
-def sda_ssa_list(state):
+    Parameters
+    ----------
+    state : str
+        State abbreviation
+
+    Returns
+    -------
+    str
+        JSON string with the soil survey areas resulting from query.
+    """
     try:
         url = r'https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest'
         if state == 'PRVI':
@@ -286,15 +345,15 @@ def createGDB(gdb_p: str, inputXML: xml, label: str) -> str:
     try:
         outputFolder = os.path.dirname(gdb_p)
         gdb_n = os.path.basename(gdb_p)
-
         if arcpy.Exists(gdb_p):
-            arcpy.AddMessage(f"\tDeleting existing file gdb {gdb_p}")
+            arcpy.AddMessage(f"\tDeleting existing FGDB {gdb_p}")
             arcpy.management.Delete(gdb_p)
+            arcpy.AddMessage(f"\t{gdb_n} was deleted: {arcpy.Exists(gdb_p)}")
         arcpy.AddMessage(f"\tCreating new geodatabase ({gdb_n}) in "
                          f"{outputFolder}")
 
-        env.XYResolution = "0.001 Meters"
-        env.XYTolerance = "0.01 Meters"
+        # env.XYResolution = "0.001 Meters"
+        # env.XYTolerance = "0.01 Meters"
 
         arcpy.management.CreateFileGDB(outputFolder, gdb_n)
         if not arcpy.Exists(gdb_p):
@@ -344,7 +403,7 @@ def createGDB(gdb_p: str, inputXML: xml, label: str) -> str:
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return False
-
+    
 
 def importCoint(ssa_l: list[str], 
               input_p: str, 
@@ -375,7 +434,7 @@ def importCoint(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
-        time.sleep(0.01)
+        # time.sleep(0.01)
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
         nccpi_sub = ['37149', '37150', '44492', '57994']
@@ -472,12 +531,14 @@ def importList(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
-        time.sleep(0.01)
+        # time.sleep(0.02)
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
         txt = table_d[table][0]
         cols = table_d[table][2]
         tab_p = f"{gdb_p}/{table}"
+        fld_dict = {}
+        tab_flds = None
         # get fields in sequence order
         cols.sort()
         fields = [f[1] for f in cols]
@@ -497,8 +558,49 @@ def importList(ssa_l: list[str],
             )
             for row in csvReader:
                 # replace empty sets with None
-                iCur.insertRow(tuple(v or None for v in row))
+                try:
+                    iCur.insertRow(tuple(v or None for v in row))
+                except:
+                    etype, exc, tb = sys.exc_info()
+                    exc = str(exc)
+                    if "Field length exceeded" in exc:
+                        result = re.search(f'Field: (.*). Value', exc)
+                        fld = result.group(1)
+                        row = tuple(v or None for v in row)
+                        
+                        if fld in fld_dict:
+                            fld_i, fld_l = tab_flds[fld]
+                            row_l = len(row[fld_i])
+                            fld_dict[fld] = max(fld_l, row_l)
+                        else:
+                            if not tab_flds:
+                                tab_flds = {
+                                    f.name: (fi - 1, f.length)
+                                    for fi, f in enumerate(
+                                        arcpy.Describe(tab_p).fields
+                                    )
+                                }
+                            fld_i, fld_l = tab_flds[fld]
+                            row_l = len(row[fld_i])
+                            fld_dict[fld] = row_l
+                        # truncate row element
+                        new_row = list(row)
+                        new_row[fld_i] = row[fld_i][:fld_l]
+                        iCur.insertRow(new_row)
+                    else:
+                        del iCur
+                        func = sys._getframe().f_code.co_name
+                        arcpy.AddError(pyErr(func))
+                        raise
+
         del csvReader, iCur
+        if fld_dict:
+            arcpy.AddWarning(f'\tField lengths exceeded in {table}')
+            for fld, max_found in fld_dict.items():
+                arcpy.AddWarning(
+                    f"\t\t{fld}, record with {max_found} characters, "
+                    f"truncated to {tab_flds[fld][1]}"
+                )
         arcpy.AddMessage(f"\tSuccessfully populated {table}")
         return 0 # None
 
@@ -514,7 +616,8 @@ def importList(ssa_l: list[str],
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
         return 1 # arcpyErr(func)
-    except:
+    except Exception as e:
+        arcpy.AddError(f"exception: {type(e).__name__}, {e.args}")
         try:
             del iCur
         except:
@@ -556,7 +659,7 @@ def importSet(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
-        time.sleep(0.01)
+        # time.sleep(0.01)
         csv.field_size_limit(2147483647)
         # 'distsubinterpmd'
         tabs_l = ['distinterpmd', 'sdvattribute', 'sdvfolderattribute']
@@ -638,7 +741,7 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
         and a message.
     """
     try:
-        time.sleep(0.01)
+        # time.sleep(0.01)
         # First read in mdstattabs: mstab table into 
         # There should be 75 tables, 6 of which are spatial, so 69
         # Then read tables from gdb
@@ -739,9 +842,179 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
         return table_d
 
 
+def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
+    """This function sets up the append_ssa to be run in parallel. At the 
+    moment this function is hard coded at 3 processors.
+
+    Parameters
+    ----------
+    feat_p : str
+        The path of the feature class that each survey area is being
+        appened to
+    survey_l : list[str,]
+        A list of shapefile paths for each soil survey area
+    epsg : int
+        The spatial reference epsg code
+    tm : str
+        The transformation to be used in projection
+
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    try:
+        ssa_d = [{'feat_p': feat_p} for feat_p in survey_l]
+        fn_inputs = iter(ssa_d)
+
+        fields = [f.name for f in arcpy.Describe(feat_p).fields]
+        fields = fields[2:-2]
+        fields.insert(0, 'SHAPE@')
+        iCur = arcpy.da.InsertCursor(feat_p, fields)
+        constants = {'fields': fields, 'epsg': epsg, 'tm': tm}
+        # replicate python not Pro
+        mp.set_executable(os.path.join(sys.exec_prefix, 'pythonw.exe'))
+        with cf.ProcessPoolExecutor() as executor:
+            # initialize first set of processes
+            futures = {
+                executor.submit(bp.append_ssa, **params, **constants): params
+                for params in it.islice(fn_inputs, 3)
+            }
+            # Wait for a future to complete, returns sets of complete 
+            # and incomplete futures
+            while futures:
+                done, _ = cf.wait(
+                    futures, return_when = cf.FIRST_COMPLETED
+                )
+
+                for fut in done:
+                    # once process is done clear it out, 
+                    # yield results and params
+                    original_input = futures.pop(fut)
+                    output = fut.result()
+                    for ssa_row in output:
+                        iCur.insertRow(ssa_row)
+                    del fut
+                
+                # Sends another set of processes equivalent in size to 
+                # those just completed to executor to keep it at 
+                # max_concurrency in the pool at a time,
+                # to keep memory consumption down.
+                futures.update({
+                    executor.submit(bp.append_ssa, **params, **constants): 
+                    params
+                    for params in it.islice(fn_inputs, len(done))
+                })
+        del iCur
+    except arcpy.ExecuteError:
+        arcpy.Delete_management("memory")
+        try:
+            del iCur
+        except:
+            pass
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return ['error']
+    except:
+        arcpy.Delete_management("memory")
+        try:
+            del iCur
+        except:
+            pass
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return ['error']
+
+
+def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
+    """This function sets up the dissolve_ssa to be run in parallel. At the 
+    moment this function is hard coded at 3 processors.
+
+    Parameters
+    ----------
+    mu_gdb_p : str
+        The path of the MUPOLYGON feature class that each survey area is being
+        appened to
+    survey_l : list[str,]
+        A list of shapefile paths for each soil survey area
+    epsg : int
+        The spatial reference epsg code
+    tm : str
+        The transformation to be used in projection
+
+    Returns
+    -------
+    _type_
+        _description_
+    """
+    try:
+        ti = time.time()
+        ssa_d = [{'mu_p': ssa_mu_p} for ssa_mu_p in survey_l]
+        fn_inputs = iter(ssa_d)
+        constants = {'epsg': epsg, 'tm': tm}
+
+        fields = ['SHAPE@', 'AREASYMBOL', 'SPATIALVER', 'MUSYM', 'MUKEY']
+        iCur = arcpy.da.InsertCursor(mu_gdb_p, fields)
+        
+        # replicate python not Pro
+        mp.set_executable(os.path.join(sys.exec_prefix, 'pythonw.exe'))
+        with cf.ProcessPoolExecutor() as executor:
+            # initialize first set of processes
+            futures = {
+                executor.submit(bp.dissolve_ssa, **params, **constants): params
+                for params in it.islice(fn_inputs, 3)
+            }
+            # Wait for a future to complete, returns sets of complete 
+            # and incomplete futures
+            while futures:
+                done, _ = cf.wait(
+                    futures, return_when = cf.FIRST_COMPLETED
+                )
+
+                for fut in done:
+                    # once process is done clear it out, 
+                    # yield results and params
+                    original_input = futures.pop(fut)
+                    output = fut.result()
+                    for ssa_row in output:
+                        iCur.insertRow(ssa_row)
+                    del fut
+                
+                # Sends another set of processes equivalent in size to 
+                # those just completed to executor to keep it at 
+                # max_concurrency in the pool at a time,
+                # to keep memory consumption down.
+                futures.update({
+                    executor.submit(bp.dissolve_ssa, **params, **constants):
+                    params
+                    for params in it.islice(fn_inputs, len(done))
+                })
+        del iCur
+        arcpy.AddMessage(f"\tMU processing time: {time.time() - ti}")
+    except arcpy.ExecuteError:
+        arcpy.Delete_management("memory")
+        try:
+            del iCur
+        except:
+            pass
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return ['error']
+    except:
+        arcpy.Delete_management("memory")
+        try:
+            del iCur
+        except:
+            pass
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return ['error']
+
+
 def appendFeatures(
         gdb_p: str, feat: list[str], input_f: str, ssa_l: list[str], 
-        light_b: bool
+        light_b: bool, inputXML: xml
     )-> list[str]:
     """Appends spatial features to File Geodatabase
     
@@ -760,6 +1033,9 @@ def appendFeatures(
         Folder with the unzipped SSURGO donwloads.
     ssa_l : list[str]
         List of soil survey areas to be appended.
+    imputXML: xml
+        An xml class object that has information about the spatial reference
+        system.
 
     Returns
     -------
@@ -777,29 +1053,21 @@ def appendFeatures(
         feat_shp = feat[1]
         # if SAPOLYGON, set up temp file to append a spatially indexed version
         if (feat_gdb == 'SAPOLYGON'):
-            feat_p = f"memory/SAPOLYGON_{gdb_n[:-4]}"
-        elif light_b and (feat_gdb == 'MUPOLYGON'):
-            feat_p = f"memory/MUPOLYGON_{gdb_n[:-4]}"
-            mudis_p = f"memory/mudis_{gdb_n[:-4]}"
-        else:
-            feat_p = f"{gdb_p}/{feat_gdb}"
+            feat_p = f"memory/SAPOLYGON_{gdb_n[:-4]}"   
 
         # total count of features
-        count = 0
         feat_l = []
         # Create list feature paths to append if not empty
         for ssa in ssa_l:
             shp = f"{input_f}/{ssa.upper()}/spatial/{feat_shp}_{ssa}.shp"
             if os.path.isfile(shp):
-                cnt = int(arcpy.GetCount_management(shp).getOutput(0))
-                count += cnt
+                cnt = int(arcpy.management.GetCount(shp).getOutput(0))
             else: 
                 # Statsgo
                 if feat_gdb == 'MUPOLYGON':
                     shp = f"{input_f}/spatial/gsmsoilmu_a_{ssa}.shp"
                     if os.path.isfile(shp):
-                        cnt = int(arcpy.GetCount_management(shp).getOutput(0))
-                        count += cnt
+                        cnt = int(arcpy.management.GetCount(shp).getOutput(0))
                     else:
                         cnt = -1
                 else:
@@ -810,44 +1078,23 @@ def appendFeatures(
         # if there are features
         if feat_l:
             arcpy.SetProgressorLabel(f"\tAppending features to {feat_gdb}")
+            # Append and dissolve MUPOLYGON features
             if light_b and (feat_gdb == 'MUPOLYGON'):
-                arcpy.CopyFeatures_management(f"{gdb_p}/{feat_gdb}", feat_p)
-                arcpy.Append_management(feat_l, feat_p, "NO_TEST")
-            elif feat_gdb != 'SAPOLYGON':
-                arcpy.Append_management(feat_l, feat_p, "NO_TEST")
-            # if only a single SSA, no need to sort
-            elif len(ssa_l) == 1:
-                feat_p = f"{gdb_p}/{feat_gdb}"
-                arcpy.Append_management(feat_l, feat_p, "NO_TEST")
-                return ssa_l
-            # Make virtual copy of template SAPOLYOGN to preserve metadata
-            else:
-                arcpy.CopyFeatures_management(f"{gdb_p}/{feat_gdb}", feat_p)
-                arcpy.Append_management(feat_l, feat_p, "NO_TEST")
-                feat_temp = feat_p
-                feat_p = f"{gdb_p}/{feat_gdb}"
-                feat_desc = arcpy.Describe(feat_p)
-                shp_fld = feat_desc.shapeFieldName
-                # Spatially sort fron NW extent
-                arcpy.management.Sort(feat_temp, feat_p, shp_fld, "UR")
-                # Get SSA sort list
-                sCur = arcpy.da.SearchCursor(feat_p, "areasymbol")
-                sort_d = {ssa: None for ssa, in sCur}
-                del sCur
-                arcpy.Delete_management("memory")
-                arcpy.management.AddSpatialIndex(feat_p)
-                return tuple(sort_d.keys())
-
-            cnt = int(arcpy.GetCount_management(feat_p).getOutput(0))
-            if cnt == count:
-                arcpy.AddMessage(
-                    f"\t{cnt} features were appended to {feat_gdb}"
-                )
-                # Dissolve MUPOLYGON to a multipart
-                if light_b and (feat_gdb == 'MUPOLYGON'):
+                # If greater than 50 surveys, append in parallel
+                if len(feat_l) > 50:
+                    feat_p = f"{gdb_p}/{feat_gdb}"
+                    big_mu_append(feat_p, feat_l, inputXML.epsg, inputXML.tm)
+                else:
+                    ti = time.time()
+                    feat_p = f"memory/MUPOLYGON_{gdb_n[:-4]}"
+                    mudis_p = f"memory/mudis_{gdb_n[:-4]}"
+                    # Make copy of empty feature in memory and append all ssa's
+                    arcpy.management.CopyFeatures(f"{gdb_p}/{feat_gdb}", feat_p)
+                    # Append to temp copy
+                    arcpy.management.Append(feat_l, feat_p, "NO_TEST")
                     arcpy.SetProgressorLabel('Dissolving MUPOLYGON feature')
                     # Repair Geometry, set parrallel
-                    with arcpy.EnvManager(parallelProcessingFactor="100"):
+                    with arcpy.EnvManager(parallelProcessingFactor="100%"):
                         output = arcpy.management.RepairGeometry(
                             in_features=feat_p,
                             delete_null="DELETE_NULL",
@@ -883,33 +1130,66 @@ def appendFeatures(
                         schema_type="NO_TEST",
                         field_mapping=schema
                     )
-                    arcpy.Delete_management("memory")
-                arcpy.management.AddSpatialIndex(feat_p)
-                return []
+                    arcpy.management.Delete("memory")
+                    # arcpy.AddMessage(f"MU processing time {time.time() - ti}")
+            # If not SAPOLYGON or MUPOLYGON, append
+            elif feat_gdb != 'SAPOLYGON':
+                if len(feat_l) > 50:
+                    feat_p = f"{gdb_p}/{feat_gdb}"
+                    big_append(feat_p, feat_l, inputXML.epsg, inputXML.tm)
+                else:
+                    feat_p = f"{gdb_p}/{feat_gdb}"
+                    arcpy.management.Append(feat_l, feat_p, "NO_TEST")
+            # if only a single SSA, no need to sort
+            elif len(ssa_l) == 1:
+                feat_p = f"{gdb_p}/{feat_gdb}"
+                arcpy.management.Append(feat_l, feat_p, "NO_TEST")
+                return ssa_l
+            # Create spatial index and append SAPOLYGON
             else:
-                arcpy.AddError(
-                    f"\tOnly {cnt} of {count} features were "
-                    f"appended to {feat_gdb}"
-                )
-                arcpy.Delete_management("memory")
-                return ['incomplete']
-        # There must be at least a single SAPOLYGON and MUPOLYGON feature
-        elif (feat_gdb == 'SAPOLYGON') or (feat_gdb == 'MUPOLYGON'):
+                # Make virtual copy of template SAPOLYOGN to preserve metadata
+                arcpy.management.CopyFeatures(f"{gdb_p}/{feat_gdb}", feat_p)
+                arcpy.management.Append(feat_l, feat_p, "NO_TEST")
+                feat_temp = feat_p
+                feat_p = f"{gdb_p}/{feat_gdb}"
+                feat_desc = arcpy.Describe(feat_p)
+                shp_fld = feat_desc.shapeFieldName
+                # Spatially sort fron NW extent
+                arcpy.management.Sort(feat_temp, feat_p, shp_fld, "UR")
+                # Get SSA sort list
+                sCur = arcpy.da.SearchCursor(feat_p, "areasymbol")
+                sort_d = {ssa: None for ssa, in sCur}
+                del sCur
+                arcpy.management.Delete("memory")
+                arcpy.management.AddSpatialIndex(feat_p)
+                cnt = int(arcpy.management.GetCount(feat_p).getOutput(0))
+                arcpy.management.DeleteField(feat_p, 'ORIG_FID')
+                arcpy.AddMessage(f"\t{cnt} features appended to {feat_gdb}")
+                return tuple(sort_d.keys())
+            cnt = int(arcpy.management.GetCount(feat_p).getOutput(0))
+        else:
+            cnt = 0
+        
+        # There must be at least a single MUPOLYGON feature
+        if (feat_gdb == 'MUPOLYGON') and (cnt == 0):
             arcpy.AddMessage(f"\tThere were no features appended to {feat_gdb}")
-            arcpy.Delete_management("memory")
+            arcpy.management.Delete("memory")
             return ['empty error']
         # No MUPOINT, MULINE, or special features
-        else:
+        elif cnt == 0:
             arcpy.AddMessage(f"\tThere were no {feat_gdb} features")
-            return ['empty']
+            return ssa_l
+        else:
+            arcpy.AddMessage(f"\t{cnt} features appended to {feat_gdb}")
+            return ssa_l
 
     except arcpy.ExecuteError:
-        arcpy.Delete_management("memory")
+        arcpy.management.Delete("memory")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
         return ['error']
     except:
-        arcpy.Delete_management("memory")
+        arcpy.management.Delete("memory")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return ['error']
@@ -924,6 +1204,16 @@ def updateMetadata(gdb_p: str,
     """ Used for featureclass and geodatabase metadata. Does not do individual 
     tables. Reads and edits the original metadata object and then exports the 
     edited version back to the featureclass or geodatabase.
+
+    Replaces xx<keywords>xx in template
+    xxSTATExx : State or states from legend overlap table (laoverlap)
+    xxSURVEYSxx : String listing all the soil survey areas
+    xxTODAYxx : Todays date
+    xxFYxx : mmyyyy format, to signify vintage of SSURGO data
+    xxENVxx : Windows, ArcGIS Pro, and Python version information
+    xxNAMExx : Name of the gSSURGO raster dataset
+    xxDBxx : Database the SSURGO data was sourced from
+    xxVERxx : Version of that database
 
     Parameters
     ----------
@@ -943,6 +1233,7 @@ def updateMetadata(gdb_p: str,
         successful.
     """
     try:
+        arcpy.SetProgressor("default", "Updating raster metadata")
         msg = []
         gdb_n = os.path.basename(gdb_p)
         msgAppend = msg.append
@@ -1121,7 +1412,20 @@ def gSSURGO(input_p: str,
         Defining the region of the SSURGO dataset for defining xml with the
         appropriate projection.
     label : str
-        _description_
+        Used to label SSURGO file geodatabase and in metadata
+    light_b : str
+        Whether to build a light version of SSURGO file geodatabase.
+        A light version only includes main interpretations in the cointerp
+        table, as well as NCCPI sub-interps, and dissolves MUPOLYOGN into
+        a multipart feature
+    module_p : str
+        Path to the fgdb.py module where other helper files are found
+    ggsurgo_v : str
+        Version of gSSURGO to build. Traditional (version 1) has string
+        character keys and a more cumbersome cointerp/sainterp schema.
+        Version 2.0 implements numeric keys, trimmed schema for cointerp/
+        sainterp and two additional tables to make cointerp more first 
+        normal.
 
     Returns
     -------
@@ -1133,8 +1437,7 @@ def gSSURGO(input_p: str,
         env.overwriteOutput= True
         gdb_n = os.path.basename(gdb_p)
         gdb_n = gdb_n.replace("-", "_")
-        surveyCount = len(survey_l)
-        date_format = "(%Y-%m-%d)"
+        # date_format = "(%Y-%m-%d)"
         # Get the XML Workspace Document appropriate for the specified aoi
         # %% check 1
         # ---- make xml
@@ -1159,28 +1462,21 @@ def gSSURGO(input_p: str,
             ('FEATLINE', 'soilsf_l'),
             ('FEATPOINT', 'soilsf_p')
         ]
-        # SAPOLYGON must be run first to sort `survey_l`
-        # if len(survey_l) > 1:
-        outcome = appendFeatures(gdb_p, features[0], input_p, survey_l, light_b)
-        if outcome:
-            survey_l = outcome
-        else:
-            return
-        for feat in features[1:]:
-            output = appendFeatures(gdb_p, feat, input_p, survey_l, light_b)
-            if not output:
-                arcpy.AddMessage(
-                    f"\tSuccessfully appended {feat[0]}"
-                )
-            elif output[0] != 'empty':
-                arcpy.AddError(f"Failed to append {feat[0]}")
-                arcpy.AddError(output)
-                return
-        gc.collect()
-        arcpy.SetProgressorPosition()
-        arcpy.ResetProgressor()
+
+        # Append SAPOLYOGN and get sort list
+        for feat in features:
+            survey_l = appendFeatures(
+                gdb_p, feat, input_p, survey_l, light_b, inputXML
+            )
+            if 'error' in survey_l:
+                return False
+            elif 'error empty' in survey_l:
+                return False
 
         # ---- call importSing
+        edit = arcpy.da.Editor(gdb_p)
+        edit.startEditing(with_undo=False)
+        edit.startOperation()
         arcpy.SetProgressorLabel("Importing constant tables")
         table_d = importSing(survey_l[0], input_p, gdb_p)
         if 'Error' in table_d:
@@ -1190,7 +1486,7 @@ def gSSURGO(input_p: str,
         msg = importSet(survey_l, input_p, gdb_p, table_d)
         if msg:
             arcpy.AddError(msg)
-            return
+            return False
         # Tables which are unique to each SSURGO soil survey area
         arcpy.SetProgressorLabel("Importing unique tables")
         tabs_uniq = [
@@ -1276,7 +1572,9 @@ def gSSURGO(input_p: str,
                 gdb_p, input_p, module_p, table_d, survey_l, light_b)
             # if msg:
             #     arcpy.AddWarning(msg)
-
+        edit.stopOperation()
+        edit.stopEditing(save_changes=True)
+        del edit
         # Create Indices
         if not createIndices(gdb_p, module_p, gssurgo_v):
             arcpy.AddWarning(
@@ -1296,15 +1594,16 @@ def gSSURGO(input_p: str,
         tab_sac = f"{gdb_p}/sacatalog"
 
         # Areasymbol and Survey Area Version Established
-        sCur = arcpy.da.SearchCursor(tab_sac, ["AREASYMBOL", "SAVEREST"])
-        export_query = [
-            (f"{ssa} {date_obj.strftime(date_format)}", f"'{ssa}'")
-            for ssa, date_obj in sCur
-        ]
-        del sCur
-        # survey_i format: NM007 (2022-09-08)
-        # query_i format: 'NM007'
-        survey_i, query_i = map(','.join, zip(*export_query))
+        # sCur = arcpy.da.SearchCursor(tab_sac, ["AREASYMBOL", "SAVEREST"])
+        # export_query = [
+        #     (f"{ssa} {date_obj.strftime(date_format)}", f"'{ssa}'")
+        #     for ssa, date_obj in sCur
+        # ]
+        # del sCur
+        # # survey_i format: NM007 (2022-09-08)
+        # # query_i format: 'NM007'
+        # survey_i, query_i = map(','.join, zip(*export_query))
+        survey_i = ', '.join(sorted(survey_l))
 
         q = "areatypename = 'State or Territory'"
         sCur = arcpy.da.SearchCursor(f"{gdb_p}/laoverlap", 'areasymbol', q)
@@ -1342,7 +1641,7 @@ def gSSURGO(input_p: str,
             f"Successfully created {gdb_p} "
             f"\nWhich includes the following surveys:"
         )
-        for line in re.findall('.{1,80}\W', query_i):
+        for line in re.findall('.{1,80}\W', survey_i):
             arcpy.AddMessage(line.replace("'", " "))
         return True
 
@@ -1906,7 +2205,34 @@ def schemaChange(
         return False
 
 
-def versionTab(input_p, gdb_p, gssurgo_v, light, script_v, ssa):
+def versionTab(
+        input_p: str, gdb_p: str, gssurgo_v: str, light: bool, 
+        script_v: str, ssa: str
+    )-> bool:
+    """This function populates the version table within the FGDB.
+
+    Parameters
+    ----------
+    input_p : str
+        Directory locatoin of the SSURGO downloads.
+    gdb_p : str
+        The path of the newly created SSURGO file geodatabase.
+    gssurgo_v : str
+        gSSURGO version
+    light : bool
+        Whether a light version of SSURGO file geodatabase was created. 
+    script_v : str
+        Version of the fgdb.py script.
+    ssa : str
+        Single soil survey area within the `input_p` to read SSURGO version
+        information.
+
+    Returns
+    -------
+    bool
+        Returns True if version table was successfully created, 
+        False otherwise.
+    """
     try:
             # populate version table
         txt_p = f"{input_p}/{ssa.upper()}/tabular/version.txt"
@@ -1968,10 +2294,70 @@ def versionTab(input_p, gdb_p, gssurgo_v, light, script_v, ssa):
         return False
 
 
-def main(args):
+def main(args) -> bool:
+    """Creates a gSSURGO File Geodatabase
+
+    Parameters
+    ----------
+    args : 
+        input_p : str
+            Directory locatoin of the SSURGO downloads.
+        option : str
+            There are five build options, 0) list of soil survey areas found
+            in `input_p` 1) By State 2) By selected soil survey areas of a
+            soil survey feature 3) By another geogrpahy 4) Build CONUS.
+        survey_l : list[str]
+            List of soil surveys to be imported into the SSURGO geodatabase.
+        survey_str : str
+            List of soil surveys as a string, used by `option` 0
+        state_str : str
+            List of state abbreviations as a string, used by `option` 1
+        ssa_lyr : feature layer
+            Soil survey feature layer with selected set used by `option` 2
+        geog_lyr : str
+            Path to a geography to be used to create individual FGDB's used 
+            by `option` 3
+        geog_fld : str
+            Field within `geog_lyr` that is used to identify geographies
+            to create FGDB's for.
+        geog_str : str
+            List of geographies found in `geo_fld` to create a FGDB for with
+            the underlying soil survey areas.
+        label : str
+            Prefix used to label gSSURGO FGDB's
+        clip_b : bool
+            Currently not utilized, but a future version may allow option 3 
+            to clip individual gSSURGO tables and features.
+        output_p : str
+            Location where the gSSURGO file geodatabases will be saved.
+        aoi : str
+            Defining the region of the SSURGO dataset for defining xml with the
+            appropriate projection.
+        label : str
+            Used to label SSURGO file geodatabase and in metadata
+        light_b : str
+            Whether to build a light version of SSURGO file geodatabase.
+            A light version only includes main interpretations in the cointerp
+            table, as well as NCCPI sub-interps, and dissolves MUPOLYOGN into
+            a multipart feature
+        ggsurgo_v : str
+            Version of gSSURGO to build. Traditional (version 1) has string
+            character keys and a more cumbersome cointerp/sainterp schema.
+            Version 2.0 implements numeric keys, trimmed schema for cointerp/
+            sainterp and two additional tables to make cointerp more first 
+            normal.
+        module_p : str
+            Path to the fgdb.py module where other helper files are found
+
+    Returns
+    -------
+    bool
+        Returns True if gSSURGO FGDB was successfully created, 
+        False otherwise.
+    """
     # %% m
     try:
-        v = '0.2'
+        v = '0.4'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
@@ -1995,10 +2381,6 @@ def main(args):
         else:
             gssurgo_v = '1.0'
         
-        # This is the SSURGO version supported by this script and the 
-        # gSSURGO schema (XML Workspace document)
-        dbVersion = 2 
-        # arcpy.AddMessage(f"SDDT version {v} for SSURGO version {dbVersion}")
         licenseLevel = arcpy.ProductInfo().upper()
         if licenseLevel == "BASIC":
             arcpy.AddError(
@@ -2203,7 +2585,7 @@ def main(args):
             
             arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
             gdb_b = gSSURGO(
-                input_p, survey_l, gdb_p, aoi, state, light_b, module_p,
+                input_p, survey_l, gdb_p, aoi, 'CONUS', light_b, module_p,
                 gssurgo_v, v
             )
             if gdb_b:
