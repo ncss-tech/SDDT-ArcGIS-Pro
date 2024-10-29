@@ -516,7 +516,7 @@ The map unit symbol uniquely identifies each closed delineation map unit. Each s
 				</stepSrc>
 			</prcStep>
 			<prcStep>
-				<stepDesc>A xxRESxx raster dataset was created by converting the 'MUPOLYGON' feature class from feature to raster using 'PolygonToRaster' with the 'CELL_CENTER' option in ArcGIS Pro. Rasters projected to a coordinate system are aligned to the National Land Cover Database (NLCD); unprojected rasters are aligned with 0 E and 0 N (Prime Meridian and Equator). Pyramids and a raster attribute table were created. A single attribute 'MUKEY' was added to the raster attribute table to facilitate joins with the attribute data.</stepDesc>
+				<stepDesc>A xxRESxx raster dataset was created by converting the 'MUPOLYGON' feature class from feature to raster using 'PolygonToRaster' with the 'MAXIMUM_COMBINED_AREA' option in ArcGIS Pro. Rasters projected to a coordinate system are aligned to the National Land Cover Database (NLCD); unprojected rasters are aligned with 0 E and 0 N (Prime Meridian and Equator). Pyramids and a raster attribute table were created. A single attribute 'MUKEY' was added to the raster attribute table to facilitate joins with the attribute data.</stepDesc>
 				<stepProc>
 					<rpOrgName>U.S. Department of Agriculture, Natural Resources Conservation Service, National Soil Survey Center</rpOrgName>
 					<rpCntInfo>
