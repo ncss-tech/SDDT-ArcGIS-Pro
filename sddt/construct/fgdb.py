@@ -9,13 +9,23 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 10/08/2024
+@modified 10/29/2024
     @by: Alexnder Stum
-@version: 0.4
-
+@version: 0.5
 
 # ---
-Updated 10/11/22; v 0.4
+
+Updated 10/29/24; v 0.5
+- Removed edit session, it was doubling the processing time. The insert locks 
+seem to be related to using arcpy to check if a fgdb exists and delete it. 
+Changed method to os.path.isdir() and shutil.rmtree() and have not been able 
+to replicate cursor lock errors. If these lock errors resurface, will explore
+arcpy.management.ClearWorkspaceCache() or providing option create with Edit
+session. 
+- improved messaging
+- Added some gc.collect() arguments
+# ---
+Updated 10/11/24; v 0.4
 - Parallelized the appending process of vector features where there are more
 than 50 surveys. Two functions `append_ssa` and `dissolve_ssa` are called 
 from a new module build_parallel. Two helper functions, `big_append` and 
@@ -57,6 +67,7 @@ import os
 import platform
 import re
 import sys
+import shutil
 import time
 import traceback
 import xml.etree.cElementTree as ET
@@ -345,15 +356,12 @@ def createGDB(gdb_p: str, inputXML: xml, label: str) -> str:
     try:
         outputFolder = os.path.dirname(gdb_p)
         gdb_n = os.path.basename(gdb_p)
-        if arcpy.Exists(gdb_p):
+        if os.path.isdir(gdb_p):
             arcpy.AddMessage(f"\tDeleting existing FGDB {gdb_p}")
-            arcpy.management.Delete(gdb_p)
-            arcpy.AddMessage(f"\t{gdb_n} was deleted: {arcpy.Exists(gdb_p)}")
+            shutil.rmtree(gdb_p)
+            # arcpy.AddMessage(f"\t{gdb_n} was deleted: {arcpy.Exists(gdb_p)}")
         arcpy.AddMessage(f"\tCreating new geodatabase ({gdb_n}) in "
                          f"{outputFolder}")
-
-        # env.XYResolution = "0.001 Meters"
-        # env.XYTolerance = "0.01 Meters"
 
         arcpy.management.CreateFileGDB(outputFolder, gdb_n)
         if not arcpy.Exists(gdb_p):
@@ -437,7 +445,7 @@ def importCoint(ssa_l: list[str],
         # time.sleep(0.01)
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
-        nccpi_sub = ['37149', '37150', '44492', '57994']
+        nccpi_sub = {'37149', '37150', '44492', '57994'}
         table = 'cointerp'
         tab_p = f"{gdb_p}/{table}"
         cols = table_d[table][2]
@@ -455,8 +463,11 @@ def importCoint(ssa_l: list[str],
             )
             if light_b:
                 for row in csvReader:
-                    if (row[1] == row[4] 
-                        or (row[1] == "54955" and row[4] in nccpi_sub)):
+                    # If a main rule interp or NCCPI commodity
+                    interp_k = row[1]
+                    rule_k = row[4]
+                    if (interp_k == rule_k 
+                        or (interp_k == "54955" and rule_k in nccpi_sub)):
                         # Slice out excluded elements
                         row = row[:7] + row[11:13] + row[15:]
                         # replace empty sets with None
@@ -949,7 +960,7 @@ def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
         _description_
     """
     try:
-        ti = time.time()
+        # ti = time.time()
         ssa_d = [{'mu_p': ssa_mu_p} for ssa_mu_p in survey_l]
         fn_inputs = iter(ssa_d)
         constants = {'epsg': epsg, 'tm': tm}
@@ -991,7 +1002,7 @@ def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
                     for params in it.islice(fn_inputs, len(done))
                 })
         del iCur
-        arcpy.AddMessage(f"\tMU processing time: {time.time() - ti}")
+        # arcpy.AddMessage(f"\tMU processing time: {time.time() - ti}")
     except arcpy.ExecuteError:
         arcpy.Delete_management("memory")
         try:
@@ -1051,6 +1062,7 @@ def appendFeatures(
         arcpy.env.geographicTransformations = 'WGS_1984_(ITRF00)_To_NAD_1983'
         feat_gdb = feat[0]
         feat_shp = feat[1]
+        arcpy.SetProgressorLabel(f"\tAppending features to {feat_gdb}")
         # if SAPOLYGON, set up temp file to append a spatially indexed version
         if (feat_gdb == 'SAPOLYGON'):
             feat_p = f"memory/SAPOLYGON_{gdb_n[:-4]}"   
@@ -1077,7 +1089,6 @@ def appendFeatures(
 
         # if there are features
         if feat_l:
-            arcpy.SetProgressorLabel(f"\tAppending features to {feat_gdb}")
             # Append and dissolve MUPOLYGON features
             if light_b and (feat_gdb == 'MUPOLYGON'):
                 # If greater than 50 surveys, append in parallel
@@ -1085,7 +1096,7 @@ def appendFeatures(
                     feat_p = f"{gdb_p}/{feat_gdb}"
                     big_mu_append(feat_p, feat_l, inputXML.epsg, inputXML.tm)
                 else:
-                    ti = time.time()
+                    # ti = time.time()
                     feat_p = f"memory/MUPOLYGON_{gdb_n[:-4]}"
                     mudis_p = f"memory/mudis_{gdb_n[:-4]}"
                     # Make copy of empty feature in memory and append all ssa's
@@ -1465,6 +1476,7 @@ def gSSURGO(input_p: str,
 
         # Append SAPOLYOGN and get sort list
         for feat in features:
+            ti = time.time()
             survey_l = appendFeatures(
                 gdb_p, feat, input_p, survey_l, light_b, inputXML
             )
@@ -1472,11 +1484,14 @@ def gSSURGO(input_p: str,
                 return False
             elif 'error empty' in survey_l:
                 return False
+            arcpy.AddMessage(f"\t\tprocessing time: {time.time() - ti}")
+            gc.collect()
 
         # ---- call importSing
-        edit = arcpy.da.Editor(gdb_p)
-        edit.startEditing(with_undo=False)
-        edit.startOperation()
+        # edit = arcpy.da.Editor(gdb_p)
+        # edit.startEditing(with_undo=False)
+        # edit.startOperation()
+        
         arcpy.SetProgressorLabel("Importing constant tables")
         table_d = importSing(survey_l[0], input_p, gdb_p)
         if 'Error' in table_d:
@@ -1488,7 +1503,7 @@ def gSSURGO(input_p: str,
             arcpy.AddError(msg)
             return False
         # Tables which are unique to each SSURGO soil survey area
-        arcpy.SetProgressorLabel("Importing unique tables")
+        
         tabs_uniq = [
             'component', 'cosurfmorphhpp', 'legend', 'chunified','cocropyld',
             'chtexturegrp', 'cosurfmorphss', 'coforprod', 'sacatalog',
@@ -1513,6 +1528,7 @@ def gSSURGO(input_p: str,
             tabs_uniq.remove('sainterp')
         # If light, exclude interp rules, except NCCPI
         else:
+            arcpy.SetProgressorLabel("Importing cointerp table")
             co_out = importCoint(survey_l, input_p, gdb_p, table_d, light_b)
             if co_out:
                 arcpy.AddError(co_out)
@@ -1534,7 +1550,9 @@ def gSSURGO(input_p: str,
         # threadCount = 1 #psutil.cpu_count() // psutil.cpu_count(logical=False)
         # arcpy.AddMessage(f"{threadCount= }")
         import_all = True
-        ti = time.time()
+        # ti = time.time()
+        gc.collect()
+        arcpy.SetProgressorLabel("Importing unique tables")
         import_jobs = funYield(importList, paramSet, constSet)
         for paramBack, output in import_jobs:
         # for paramBack in paramSet:
@@ -1572,9 +1590,10 @@ def gSSURGO(input_p: str,
                 gdb_p, input_p, module_p, table_d, survey_l, light_b)
             # if msg:
             #     arcpy.AddWarning(msg)
-        edit.stopOperation()
-        edit.stopEditing(save_changes=True)
-        del edit
+        arcpy.SetProgressorLabel("Saving changes")
+        # edit.stopOperation()
+        # edit.stopEditing(save_changes=True)
+        # del edit
         # Create Indices
         if not createIndices(gdb_p, module_p, gssurgo_v):
             arcpy.AddWarning(
@@ -1588,21 +1607,7 @@ def gSSURGO(input_p: str,
         if not rel_b:
             return False
         
-        # Query the output SACATALOG table to get list of surveys that were 
-        # exported to the gSSURGO
         arcpy.AddMessage("\tUpdating metadata...")
-        tab_sac = f"{gdb_p}/sacatalog"
-
-        # Areasymbol and Survey Area Version Established
-        # sCur = arcpy.da.SearchCursor(tab_sac, ["AREASYMBOL", "SAVEREST"])
-        # export_query = [
-        #     (f"{ssa} {date_obj.strftime(date_format)}", f"'{ssa}'")
-        #     for ssa, date_obj in sCur
-        # ]
-        # del sCur
-        # # survey_i format: NM007 (2022-09-08)
-        # # query_i format: 'NM007'
-        # survey_i, query_i = map(','.join, zip(*export_query))
         survey_i = ', '.join(sorted(survey_l))
 
         q = "areatypename = 'State or Territory'"
@@ -1688,7 +1693,7 @@ def createIndices(gdb_p: str, module_p: str, gssurgo_v: str) -> bool:
             csv_r = csv.reader(csv_f, delimiter=',')
             hdr = next(csv_r)
             # Sequence, Unique, ascending are irrelavent in FGDB's
-            arcpy.SetProgressorLabel("Creating indexes")
+            arcpy.SetProgressorLabel("Creating indices")
             for tab_n, idx_n, seq, col_n, uk in csv_r:
                 if uk == 'Yes':
                     un_b = "UNIQUE"
@@ -2027,7 +2032,7 @@ def schemaChange(
         # Read cinterp.txt
             # exclude non-main rule cotinterps if light
             # except for NCCPI rules (main rule 54955)
-        nccpi_sub = ['37149', '37150', '44492', '57994']
+        nccpi_sub = {'37149', '37150', '44492', '57994'}
         arcpy.SetProgressorLabel("importing cointerp")
         co_tbl = 'cointerp'
         q = "tabphyname = 'cointerp'"
@@ -2061,9 +2066,7 @@ def schemaChange(
                 rule_k = row[4]
                 # Add to new (rules, interps) to dict to populate mdrule table
                 if (interp_k, rule_k) not in rule_d:
-                    rule_d[(interp_k, rule_k)] = [
-                        *row[5:7], row[3]
-                    ]
+                    rule_d[(interp_k, rule_k)] = [*row[5:7], row[3]]
 
                 # If its a rule not an interp, 
                 # the rule and interp keys (mrulekey) are not equal
@@ -2357,7 +2360,7 @@ def main(args) -> bool:
     """
     # %% m
     try:
-        v = '0.4'
+        v = '0.5'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
