@@ -41,7 +41,7 @@ class Toolbox(object):
         self.alias = 'Soil Data Development Toolbox'
 
         # List of tool classes associated with this toolbox
-        self.tools = [BulkD, buildFGDB, rasterize, valu1] #, aggregator]
+        self.tools = [BulkD, buildFGDB, rasterize, valu1]#, aggregator]
 
 
 class BulkD(object):
@@ -212,7 +212,8 @@ class BulkD(object):
         elif params[1].value == self.options[2]:
             for i in range(2, 6):
                 params[i].enabled = False
-            params[6].enabled = True
+            params[6].enabled = False
+            params[7].enabled = True
 
         # Choice to use a geography
         elif params[1].valueAsText == self.options[3]:
@@ -1262,8 +1263,8 @@ class aggregator(object):
         '(WV)', '(WY)'
         ]
     months = [
-        'January', 'February', 'March', 'April', 'May', 'June', 'July',
-        'August', 'September', 'October', 'November', 'December'
+        'Annual', 'January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'
     ]
 
     def __init__(self):
@@ -1358,6 +1359,7 @@ class aggregator(object):
             direction="Input",
             parameterType="Optional",
             datatype="GPString",
+            # Set True to enable searching, but only 1 choice allowed
             multiValue=True,
             enabled=False
         ))
@@ -1399,7 +1401,7 @@ class aggregator(object):
             direction="Input",
             parameterType="Optional",
             datatype="GPValueTable",
-            multiValue=True,
+            # multiValue=True, # Make future version multivalue
             enabled=False
         ))
         params[-1].columns = [["GPLong", "Top"], ["GPLong", "Bottom"]]
@@ -1410,27 +1412,29 @@ class aggregator(object):
 
         # parameter 10
         params.append(arcpy.Parameter(
-            displayName="Beginning Month",
+            displayName="Timespan",
             name="month1",
             direction="Input",
             parameterType="Optional",
-            datatype="GPString",
+            datatype="GPValueTable",
             enabled=False
         ))
-        params[-1].filter.list = aggregator.months
+        params[-1].columns = [["GPString", "Beginning"], ["GPString", "End"]]
+        params[-1].filters[0].list = aggregator.months
+        params[-1].filters[1].list = aggregator.months
 
-        # parameter 11
-        params.append(arcpy.Parameter(
-            displayName="Ending Month",
-            name="month2",
-            direction="Input",
-            parameterType="Optional",
-            datatype="GPString",
-            enabled=False
-        ))
-        params[-1].filter.list = aggregator.months
+        # # parameter 11
+        # params.append(arcpy.Parameter(
+        #     displayName="Ending Month",
+        #     name="month2",
+        #     direction="Input",
+        #     parameterType="Optional",
+        #     datatype="GPString",
+        #     enabled=False
+        # ))
+        # params[-1].filter.list = aggregator.months
 
-        # parameter 12
+        # parameter 12 -> 11
         params.append(arcpy.Parameter(
             displayName="Tie Break Rule",
             name="tie",
@@ -1441,28 +1445,32 @@ class aggregator(object):
         ))
         params[-1].filter.list = ['Higher', 'Lower']
 
-        # parameter 13
-        params.append(arcpy.Parameter(
-            displayName="Treat Null entries as Zero",
-            name="null",
-            direction="Input",
-            parameterType="Optional",
-            datatype="GPBoolean",
-            enabled=False
-        ))
-        params[-1].value = False
-
-        # parameter 14
+        # parameter 14 -> 12
         params.append(arcpy.Parameter(
             displayName="Component Percent Cutoff",
             name="comp_pct",
             direction="Input",
-            parameterType="Optional",
+            parameterType="Required",
             datatype="GPLong",
             enabled=False
         ))
+        params[-1].value = 0
 
-        # parameter 15
+        # parameter 17 -> 13
+        # This is only relevant to properties?
+        params.append(arcpy.Parameter(
+            displayName="Property Range Value",
+            name="range_value",
+            direction="Input",
+            parameterType="Optional",
+            datatype="GPString",
+            enabled=False
+        ))
+        params[-1].filter.list = ['Representative', 'Low', 'High']
+        params[-1].value = 'Representative'
+
+        # parameter 15 -> 14
+        # Not relevant till mapping functionality encoded
         params.append(arcpy.Parameter(
             displayName="Map Interp Fuzzy Values",
             name="fuzzy",
@@ -1473,7 +1481,10 @@ class aggregator(object):
         ))
         params[-1].value = False
 
-        # parameter 16
+        # parameter 16 -> 15 It was inactivated in ArcMap SDDT with this note: 
+            # Need to validate this parameter and its relationship to p-11
+            # Check this box to include NULL rating values 
+        # This parameter will remain inactive and set to False
         params.append(arcpy.Parameter(
             displayName="Include Null Rating Values",
             name="rating_null",
@@ -1484,17 +1495,23 @@ class aggregator(object):
         ))
         params[-1].value = False
 
-        # parameter 17
-        params.append(arcpy.Parameter(
-            displayName="Property Range Value",
-            name="range_value",
-            direction="Input",
-            parameterType="Optional",
-            datatype="GPString",
-            enabled=False
-        ))
+        
         params[-1].filter.list = ["Low", "Representative", "High"]
         params[-1].value = "Representative"
+
+        # parameter 13 -> 17
+        # this parameter is obsolete as SDV attributes
+        # interpnullsaszerooptionflag and interpnullsaszeroflag are
+        # always equal. Merits further investigation
+        params.append(arcpy.Parameter(
+            displayName="Treat Null entries as Zero",
+            name="null",
+            direction="Input",
+            parameterType="Optional",
+            datatype="GPBoolean",
+            enabled=False
+        ))
+        params[-1].value = False
 
         return params
 
@@ -1544,7 +1561,7 @@ class aggregator(object):
                 params[i].enabled = False
             return
         
-        # if a filter type has been selected
+        # if a property/interp filter type has been selected
         if (filt := params[2].value) and not params[2].hasBeenValidated:
             if ("Most Common Grouped (SDV Categories)" == filt
                 or "Most Common as List (all SDV)" == filt):
@@ -1590,7 +1607,9 @@ class aggregator(object):
                     params[3].enabled = False # turn off SDV Category
                     params[4].enabled = False # Turn off Select Table
                     params[5].enabled = True # Turn on Soil Attributes
-                    params[5].filter.list = list(aggregator.atts.values())
+                    params[5].filter.list = sorted(list(
+                        aggregator.atts.values()
+                    ))
                     params[5].value = None
 
             # if a Table filter option selected
@@ -1611,7 +1630,7 @@ class aggregator(object):
             fold_k = aggregator.cats[cat]
             att_keys = aggregator.cross[fold_k]
             params[5].enabled = True
-            params[5].filter.list = [aggregator.atts[ak] for ak in att_keys]
+            params[5].filter.list = sorted([aggregator.atts[ak] for ak in att_keys])
             params[5].value = None
 
         # if a Table has been selected
@@ -1639,7 +1658,12 @@ class aggregator(object):
             params[5].value = None
 
         # if a Soil Attribute has been selected
-        if not params[5].hasBeenValidated and (att := params[5].values[0]):
+        # Can only keep one selection
+        if not params[5].hasBeenValidated and (att := params[5].values[-1]): #values[0]):
+            params[5].values.clear()
+
+            params[5].value = att
+            # params[5].value = att
             if aggregator.sdv_b:
                 # If SDV, read in more details from SDV attribute table
                 # Get SDV Attributes
@@ -1661,7 +1685,8 @@ class aggregator(object):
 
                 # Primary & Secondary Constraints
                 if ((p_col := aggregator.sdv_att[att]["primaryconcolname"])
-                    and (s_col := aggregator.sdv_att[att]["secondaryconcolname"])):
+                    and 
+                    (s_col := aggregator.sdv_att[att]["secondaryconcolname"])):
                     prim_d = aggregator.sdv_con.get(str(att))
                     if not prim_d:
                         db_p = f"{path}/{table}"
@@ -1723,9 +1748,9 @@ class aggregator(object):
                 # Tiebreaker Parameter (is this SDV specific?)
                 if aggregator.sdv_att[att]["tiebreakrule"] == -1:
                     aggregator.sdv_att[att]["tiebreakrule"] = 0
-                    params[12].enabled = False
+                    params[11].enabled = False
                 else:
-                    params[12].enabled = True
+                    params[11].enabled = True
             if aggregator.sdv_b:
                 dSDV = aggregator.sdv_att[att]
             else:
@@ -1737,9 +1762,9 @@ class aggregator(object):
             if (aggregator.sdv_b
                 and dSDV["algorithmname"] == "percent present"):
                 params[6].filter.list = ["Percent Present"]
-                params[15].enabled = False # Turn off Fuzzy
-                params[16].enabled = False # Turn off Null rating
-                params[17].enabled = False # Turn off RV
+                params[14].enabled = False # Turn off Fuzzy
+                params[15].enabled = False # Turn off Null rating
+                params[13].enabled = False # Turn off RV
             # SDV attribute and No Aggregation Necessary
             elif (aggregator.sdv_b 
                 and dSDV["algorithmname"] == "No Aggregation Necessary"):
@@ -1748,89 +1773,102 @@ class aggregator(object):
                     params[i].enabled = False
             # An interpretation
             elif table == 'cointerp':
-                params[15].enabled = True # Turn on Fuzzy
-                params[16].enabled = True # Turn on Null rating
-                params[17].enabled = False # Turn off RV
-                if not params[15].value:
-                    if (aggregator.sdv_b and 
-                        dSDV["attributename"] != dSDV["nasisrulename"]):
-                        params[6].filter.list = [
-                            "Dominant Condition", "Dominant Component",
-                            "Least Limiting", "Most Limiting"
-                        ]
-                        params[6].value = dSDV["algorithmname"]
-                    else:
-                        params[6].filter.list = [
-                            "Dominant Condition", "Dominant Component"
-                        ]
+                # Leaving off the Map Interp Fuzzy Values off for now
+                params[14].enabled = False # Turn on Fuzzy
+                # inactive for now
+                params[15].enabled = False # Turn on Null rating
+                params[13].enabled = False # Turn off RV
+                ruledesign = dSDV['ruledesign']
+                if ruledesign == 3:
+                    # These interpretation types are class indices
+                    # Weighted average isn't appropriate
+                    params[6].filter.list = [
+                        "Dominant Condition", "Dominant Component",
+                        "Least Limiting", "Most Limiting"
+                    ]
+                    params[6].value = dSDV["algorithmname"]
                 else:
-                    if (aggregator.sdv_b and 
-                        dSDV["attributename"] != dSDV["nasisrulename"]):
-                        params[6].filter.list = [
-                            "Weighted Average", "Least Limiting", 
-                            "Most Limiting", "Dominant Component"
-                        ]
-                        params[6].value = dSDV["algorithmname"]
-                    else:
-                        params[6].filter.list = [
-                            "Weighted Average", "Dominant Component"
-                        ]
-                    params[6].value = "Weighted Average"
+                    # ruledesign 1 and 2
+                    params[6].filter.list = [
+                        "Dominant Condition", "Dominant Component",
+                        "Least Limiting", "Most Limiting", "Weighted Average"
+                    ]
+                    params[6].value = dSDV["algorithmname"]
 
             # Numeric Soil Attributes
             elif (aggregator.sdv_b and dSDV["effectivelogicaldatatype"] 
-                  in ["integer", "float"]):
-                params[17].enabled = True # Turn on hi/rv/lo
-                params[16].enabled = False # Turn off Null rating
-                params[15].enabled = False # Turn off Interp Fuzzy Values
+                  in ["Integer", "Float"]):
+                params[13].enabled = True # Turn on hi/rv/lo
+                params[13].value = 'Representative'
+                params[15].enabled = False # Turn off Null rating
+                params[14].enabled = False # Turn off Interp Fuzzy Values
                 
                 # Horizons level
                 if dSDV["horzlevelattribflag"] == 1:
-                    params[6].filter.list = [
-                        "Dominant Component", "Minimum or Maximum", 
-                        "Weighted Average"
-                    ]
+                    # AASHTO is an ordinal index wiht h/rv/l
+                    if att == 'AASHTO Group Index':
+                        params[6].filter.list = [
+                            "Dominant Condition", "Dominant Component",
+                            "Minimum", "Maximum"
+                        ]
+                    else:
+                        params[6].filter.list = [
+                            "Dominant Component", "Minimum", "Maximum", 
+                            "Weighted Average"
+                        ]
                     params[6].value = dSDV["algorithmname"]
                 # Component level
                 elif dSDV["complevelattribflag"] == 1:
                     params[6].filter.list = [
                         "Dominant Condition", "Dominant Component", 
-                        "Minimum or Maximum", "Weighted Average"
+                        "Minimum", "Maximum", "Weighted Average"
                     ]
-                    params[6].value = dSDV["algorithmname"]
+                    params[6].value = dSDV["algorithmname"] 
             # Mapunit level
             elif aggregator.sdv_b and dSDV["mapunitlevelattribflag"] == 1:
                 params[6].filter.list = ["No Aggregation Necessary"]
                 for i in range(7, len(params)):
                     params[i].enabled = False
+            # Ordinal classes
             elif aggregator.sdv_b and dSDV["tiebreakdomainname"]:
+                params[13].enabled = False # Turn off hi/rv/lo
                 params[6].filter.list = [
                     "Dominant Condition", "Dominant Component",
-                    "Minimum or Maximum"
+                    "Minimum", "Maximum"
                 ]
                 params[6].value = dSDV["algorithmname"]
+
+            # Nominal classes
             else:
+                params[13].enabled = False # Turn off hi/rv/lo
                 params[6].filter.list = [
                     "Dominant Condition", "Dominant Component"
                 ]
                 params[3].value = dSDV["algorithmname"]
+
+            # Set month table
+            if dSDV["monthrangeoptionflag"] == 1:
+                params[10].enabled = True
+            else:
+                params[10].enabled = False
 
             # Set for all SDV or Table options
             if str(table).startswith('ch'):
                 params[9].enabled = True
             else:
                 params[9].enabled = False
-            
-            
-
-
-
-
-
-            # Table specific tasks
-            # Read in table columns
-
-
+        
+        # Activate tiebreaker for Dominant Condition
+        if params[6].enabled and params[6].value == "Dominant Condition":
+            params[11].enabled = True
+        else:
+            params[11].enabled = False
+        # Activate Component Percent Cutoff if not Dominant Component
+        if params[6].enabled and params[6].value != "Dominant Component":
+            params[12].enabled = True
+        else:
+            params[12].enabled = False
+            params[12] = 0
 
         return
 
