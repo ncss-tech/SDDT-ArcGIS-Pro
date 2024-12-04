@@ -8,12 +8,15 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 10/04/2024
+@modified 12/04/2024
     @by: Alexnder Stum
-@version: 0.3
+@version: 0.4
 
 # ---
-Updated 10/04/2024
+Updated 12/04/2024; v 0.4
+- Made path reference to Valu1 table explicit
+# ---
+Updated 10/04/2024; v 0.3
 - Enabled it to batch
 """
 
@@ -1011,6 +1014,7 @@ def batch(gdb_p, module_p):
         # components that have a histic epipedon
         with arcpy.da.SearchCursor(**tabs_d['codiagfeatures']) as sCur:
             hist_keys = {cokey for cokey, in sCur}
+
         # components that are histisols 
         # or hist part of subgroup, suborder, taxonomic class
         with arcpy.da.SearchCursor(**tabs_d['component1']) as sCur:
@@ -1048,6 +1052,7 @@ def batch(gdb_p, module_p):
             cor1_depths = {
                 ck: byKey(list(cr))[1] for ck, cr in groupby(sCur, byKey)
             }
+   
         with arcpy.da.SearchCursor(**tabs_d['corestrictions2']) as sCur:
             cor2_depths = {
                 ck: byKey(list(cr))[1] for ck, cr in groupby(sCur, byKey)
@@ -1076,12 +1081,13 @@ def batch(gdb_p, module_p):
         n_rows = len(d_ranges)
         dom_com_d = {}
 
-        valu1_des = arcpy.Describe(f"{gdb_p}/Valu1")
+        valu1_p = f"{gdb_p}/Valu1"
+        valu1_des = arcpy.Describe(valu1_p)
         valu1_flds = [f.name for f in valu1_des.fields]
         valu1_flds = valu1_flds[1:]
         with (
-            arcpy.da.InsertCursor('Valu1', valu1_flds) as iCur,
             arcpy.da.SearchCursor(**tabs_d['component3']) as sCur,
+            arcpy.da.InsertCursor(valu1_p, valu1_flds) as iCur
         ):
             for mk, comps in groupby(sCur, byKey):
                 mu_t = compAg(
@@ -1115,6 +1121,7 @@ def batch(gdb_p, module_p):
                 ]
                 iCur.insertRow(v_row)
                 dom_com_d[mk]= mu_t[-2:]
+
         # Populate Dominant Component table
         with arcpy.da.InsertCursor(**tabs_d['dom_com']) as iCur:
             for dom_com_its in dom_com_d.items():
