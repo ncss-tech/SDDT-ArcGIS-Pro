@@ -41,7 +41,7 @@ class Toolbox(object):
         self.alias = 'Soil Data Development Toolbox'
 
         # List of tool classes associated with this toolbox
-        self.tools = [BulkD, buildFGDB, rasterize, valu1]#, aggregator]
+        self.tools = [BulkD, buildFGDB, rasterize, valu1, aggregator]
 
 
 class BulkD(object):
