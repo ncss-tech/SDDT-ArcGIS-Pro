@@ -9,12 +9,21 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 10/29/2024
+@modified 2/19/2025
     @by: Alexnder Stum
-@version: 0.5
+@version: 0.7
+
 
 # ---
-
+Updated 10/29/24; v 0.7
+- Point and line features were not getting fully populated due to indexing
+error related to field names with big_append.
+# ---
+Updated 10/29/24; v 0.6
+- Modified `importSet` function to set unique row key field instead of 
+setting unique rows.
+- Month table was being populated 10 times.
+# ---
 Updated 10/29/24; v 0.5
 - Removed edit session, it was doubling the processing time. The insert locks 
 seem to be related to using arcpy to check if a fgdb exists and delete it. 
@@ -674,31 +683,34 @@ def importSet(ssa_l: list[str],
         csv.field_size_limit(2147483647)
         # 'distsubinterpmd'
         tabs_l = ['distinterpmd', 'sdvattribute', 'sdvfolderattribute']
+        key_d = {'sdvattribute': 0, 'sdvfolderattribute': 1, 'distinterpmd': 7}
         arcpy.env.workspace = gdb_p
         
         for table in tabs_l:
             txt = table_d[table][0]
             cols = table_d[table][2]
             tab_p = f"{gdb_p}/{table}"
+            ki = key_d[table]
             # get fields in sequence order
             cols.sort()
             fields = [f[1] for f in cols]
             iCur = arcpy.da.InsertCursor(tab_p, fields)
-            row_s = set()
+            key_s = set()
             for ssa in ssa_l:
                 txt_p = f"{input_p}/{ssa.upper()}/tabular/{txt}.txt"
                 if not os.path.exists(txt_p):
                     return f"{txt_p} does not exist"
                 csvReader = csv.reader(
-                    open(txt_p, 'r'), 
+                    open(txt_p, 'r'), #, encoding="ISO-8859-1"
                     delimiter = '|', 
                     quotechar = '"'
                 )
                 for row in csvReader:
-                    # replace empty sets with None
-                    row_s.add(tuple(v or None for v in row))
-            for row in row_s:
-                iCur.insertRow(row)
+                    row = (tuple(v or None for v in row))
+                    if row[ki] not in key_s:
+                        # replace empty sets with None
+                        key_s.add(row[ki])
+                        iCur.insertRow(row)
         del iCur
         return ''
 
@@ -811,18 +823,18 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
                 # replace empty sets with None
                 iCur.insertRow(tuple(v or None for v in row))
             del iCur
-            # Populate the month table
-            months = [
-                (1, 'January'), (2, 'February'), (3, 'March'), (4, 'April'),
-                (5, 'May'), (6, 'June'), (7, 'July'), (8, 'August'),
-                (9, 'September'), (10, 'October'), (11, 'November'),
-                (12, 'December')
-            ]
-            month_p = f"{gdb_p}/month"
-            iCur = arcpy.da.InsertCursor(month_p, ['monthseq', 'monthname'])
-            for month in months:
-                iCur.insertRow(month)
-            del iCur
+        # Populate the month table
+        months = [
+            (1, 'January'), (2, 'February'), (3, 'March'), (4, 'April'),
+            (5, 'May'), (6, 'June'), (7, 'July'), (8, 'August'),
+            (9, 'September'), (10, 'October'), (11, 'November'),
+            (12, 'December')
+        ]
+        month_p = f"{gdb_p}/month"
+        iCur = arcpy.da.InsertCursor(month_p, ['monthseq', 'monthname'])
+        for month in months:
+            iCur.insertRow(month)
+        del iCur
 
         return table_d
 
@@ -879,9 +891,14 @@ def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
         ssa_d = [{'feat_p': feat_p} for feat_p in survey_l]
         fn_inputs = iter(ssa_d)
 
-        fields = [f.name for f in arcpy.Describe(feat_p).fields]
-        fields = fields[2:-2]
+        exclude_fields = ['OBJECTID', 'Shape', 'Shape_Length', 'Shape_Area']
+        fields = [
+            f.name for f in arcpy.Describe(feat_p).fields 
+            if f.name not in exclude_fields
+        ]
+        
         fields.insert(0, 'SHAPE@')
+        #arcpy.AddMessage(f"{fields=}")
         iCur = arcpy.da.InsertCursor(feat_p, fields)
         constants = {'fields': fields, 'epsg': epsg, 'tm': tm}
         # replicate python not Pro
@@ -2360,7 +2377,7 @@ def main(args) -> bool:
     """
     # %% m
     try:
-        v = '0.5'
+        v = '0.7'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
