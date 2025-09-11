@@ -8,23 +8,61 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@Version: 0.1
+@Version: 0.3.2
 
+# --- 
+Updated 08/19/2025; v 0.3.2
+- Consolidated comp_hi_con and comp_lo_con into comp_con and fixed errors
+- Created domain_it function to handle tie's related to dominant condition 
+    which leverages domain sequence thereby respecting ordinal rankings
+- Fixed error with horzion where statement
+- Fixed error with WTA and interps
+- Made Min/Max more generic, fixed error with component level
+- Made Most/Least limiting more generic, 
+    it now accounts for suitability/limitation
+- Added transforms for pH
+# --- 
+Updated 08/14/2025; v 0.3.1
+- Fixed logic errors in comp_lo_con function when lower tie selected
+- Added try block to comp_hi_con and comp_lo_con
 
-So if the component has 
-0 - 5 Oe awc: Null
-5 - 20 A awc: 0.3
- 
-Then AWS for 0-20 is 45mm and the thickness for 0-20 would 15 cm
+# --- 
+Updated 07/16/2025; v 0.3
+- Replaced byKey function and a couple of lambda functions with itemgetter
+- Placed lambda definitions outside of filter calls
+- Horizon Minimum and Maximum ag handle np.nan
+- Handle Percent Present
+- Handle Primary and Secondary constraints
+- Handle full profile horizon summary: 0-10000
+- Interp table and column names per SDV when present
+
+# ---
+Updated 07/15/2025; v 0.2
+- Fixed Dominant Component Horizon key and index errors
+- Fixed precision lev1
+- Fixed aggregation for nominal horizon properties
+
 """
+v = '0.3.2'
+
 
 import arcpy
 from itertools import groupby
-from itertools import zip_longest as zipl
+from operator import itemgetter as iget
+import re
 import sys
 import traceback
 import numpy as np
-from typing import Any, Generic, Iterator, Sequence, TypeVar, Callable
+from numpy import vectorize
+from numpy import isnan
+from math import log10
+import os
+from typing import Any, Generic, Iterator, Sequence, TypeVar, Callable, Union
+from sortedcontainers import SortedList
+
+
+Numeric = Union[int, float]
+Key = TypeVar("Key", int, str)
 
 
 
@@ -32,12 +70,6 @@ def do_twice(func):
     def wrapper_do_twice(*args, **kwargs):
         func(*args, **kwargs)
         func(*args, **kwargs)
-    return wrapper_do_twice
-
-def do_twice(func):
-    def wrapper_do_twice(*args, **kwargs):
-        func(*args, **kwargs)
-        return func(*args, **kwargs)
     return wrapper_do_twice
 
 
@@ -131,6 +163,46 @@ def getVersion(tabs_d) -> str:
         return ''
 
 
+def dom_com(tabs_d, gs_v, gdb_p, module_p):
+    try:
+        if not arcpy.Exists(f"{gdb_p}/DominantComponent"):
+            # Create Dominant Component table is it doesn't exist
+            arcpy.AddMessage('Creating Dominant Component table')
+            with arcpy.da.SearchCursor(**tabs_d['comp_maj2']) as sCur:
+                # groupby mukey, then sort by percent and select last (largest)
+                dom_com_d = {
+                    mk: sorted([(pct, ck) for _, ck, pct in comps])[-1] 
+                    for mk, comps in groupby(sCur, iget(0))
+                }
+            construct_p = os.path.dirname(module_p) + '/construct'
+            if gs_v == "1.0":
+                arcpy.management.ImportXMLWorkspaceDocument(
+                    gdb_p, 
+                    f"{construct_p}/DominantComponent_v1.xml", "SCHEMA_ONLY"
+                )
+            else:
+                arcpy.management.ImportXMLWorkspaceDocument(
+                    gdb_p, 
+                    f"{construct_p}/DominantComponent_v2.xml", "SCHEMA_ONLY"
+                )
+            with arcpy.da.InsertCursor(**tabs_d['Dominant2']) as iCur:
+                for mk, (pct, ck) in dom_com_d.items():
+                    iCur.insertRow([mk, ck, pct])
+        # return component keys of dominant compoents
+        with arcpy.da.SearchCursor(**tabs_d['Dominant1']) as sCur:
+                cokeys = {ck for ck, in sCur}
+        return cokeys
+
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return False
+    
+
 def nanSum(base_arr: Nx2, i_arr: Nx2):
     """Sums two numpy arrays together similar to numpy nansum but while 
     preserving relationship NaN + Nan = Nan, as numpy >1.2 nansum 
@@ -147,8 +219,8 @@ def nanSum(base_arr: Nx2, i_arr: Nx2):
         dimensions as base_arr.
     """
     try:
-        was_nan = np.isnan(base_arr)
-        still_nan = np.isnan(i_arr)
+        was_nan = isnan(base_arr)
+        still_nan = isnan(i_arr)
         # Index of base_arr cells flipping from nan
         flipped = np.logical_and(was_nan, ~still_nan)
         # Prepare base_arr layer cells that are no longer nan to accept 
@@ -163,107 +235,27 @@ def nanSum(base_arr: Nx2, i_arr: Nx2):
         return False
 
 
-def overlapRange(
-        fixed: tuple[float, float], horizon: list[float, float]
-    ) -> float:
-    """Determines the thickness of the overlap between depth ranges
-    of a soil layer and a genetic soil horizon.
-
-    Parameters
-    ----------
-    fixed : tuple[float, float]
-        The top and bottom depths of a soil layer.
-    horizon : list[float, float]
-        The top and bottom depths of a genetic soil horizon.
-
-    Returns
-    -------
-    float
-        Thickness of the intersection.
-    """
-    try: 
-        depth_r = (
-            (max(fixed[1], horizon[0]) - max(fixed[0], horizon[0]))
-            - (max(fixed[1], horizon[1]) - max(fixed[0], horizon[1]))
-        )
-        if not depth_r:
-            return np.nan
-        else:
-            return depth_r
-
-    except arcpy.ExecuteError:
-        func = sys._getframe().f_code.co_name
-        arcpy.AddError(arcpyErr(func))
-        return False
-    except:
-        func = sys._getframe().f_code.co_name
-        arcpy.AddError(pyErr(func))
-        return False
-
-
-def awsCalc(thickness: int, awc: tuple[float]) -> float:
-    """Calculates the available water storage for a given thickness of
-    soil. It converts this to mm of water storage. 
-    Conversion factor multiply by 10: 10 mm/cm
+def propCalc(thickness: int, prop: tuple[Numeric]) -> float:
+    """Weigths a given horizon property by the thickness of intersection
 
     Parameters
     ----------
     thickness : int
         Thickness of soil depth which represents the intersection of genetic
         soil horizon and a soil layer/zone in [cm]
-    awc : float
-        The available water holding capacity of the genetic soil horizon
-        as proportion of soil volume.
+    prop : Numeric
+        The horizon property.
 
     Returns
     -------
     float
-        Available water storage in [mm].
+        Property weighted by thickness.
     """
-    awc, = awc
-    return thickness * awc * 10
+    prop, = prop
+    return thickness * prop
 
 
-def socCalc(thickness: int, prop_i: tuple[float, float, int]) -> float:
-    """Calculates grams of organic Carbon per square meter soil within a layer.
-
-    Pedon layer volume = thickness [cm] * 100 [cm] * 100 [cm]: [cm]^3
-    Proportion soil = (100 - fragvol) / 100
-    Actual soil volume = thickness * 100 * (100 - fragval): [cm]^3
-    Org C per volume = om / 1.724 / 100 * db: [g]/[cm]^3
-        conversion factor of %SOM to %SOC from NSSH 618.44
-    Org C mass = actual layer volume * Org C per volume
-        thickness * (100 - fragvol) * om / 1.724 * db: [g]/[pedon layer]
-
-    Parameters
-    ----------
-    om : float
-        Horizon 
-    thickness : int
-        Thickness of the intersection of the soil horizon and the soil layer.
-        [cm]
-    prop_i : tuple[float, float, int]
-        Three soil horizon properties
-        1) Percent organic matter
-        2) Soil bulk density: [g]/[cm]^3
-        3) percent volume of rock fragments. Fragment volume is assumed
-        to contribute 0 grams of organic Carbon.
-
-    Returns
-    -------
-    float
-        Mass of organic carbon in from soil horizon within soil layer.
-        [g]
-    """
-    try:
-        om, db, fragvol = prop_i
-        soc = thickness * (100 - fragvol) * om / 1.724 * db
-        return soc
-    except:
-        return np.nan
-
-
-def byKey(x: Sequence, i: int=0) -> Any:
+def byKey3(x: Sequence, i: int=0) -> Any:
     """Helper function that returns ith element from a Sequence
 
     Parameters
@@ -306,72 +298,144 @@ def fragAg(chgrp: Iterator[Any]) -> float:
     return frag
 
 
-def checkDensity(db: float, sand: float, silt: float, clay: float) -> bool:
-    """Calculates whether a horizon is too dense for commodity crops 
-    relative to the soil fine earth fraction.
+# WSS does the arithmetic mean of pH and not proton activity mean
+# These functions available for calculating proton activity mean
+def nada(v): return v
+def nada2(v, p): round(v, p)
+def toH(pH): return 10**-pH
+def topH(H): return -log10(H)
+def topH2(H, p): return round(-log10(H), p)
 
-    a = bulk density - sand * 0.0165 + silt * 0.0130 + clay * 0.0125
-    b = 0.002081 * sand + 0.003912 * silt + 0.0024351 * clay
-    if a > b, then too dense for commodity crops.
+
+def horzAg(d_ranges: tuple[tuple[float, float],],
+           chors: Iterator[list[Key, Numeric, int, int]], pH: bool=False
+    ) -> Numeric:
+    """Aggregates soil properties by soil layer depths from each 
+    genetic soil horizon. It is called by horizons grouped cokey
 
     Parameters
     ----------
-    db : float
-        Soil bulk density [g]/[cm]^3
-    sand : float
-        Percent sand [%]
-    silt : float
-        Percent silt [%]
-    clay : float
-        Percent clay [%]
+    d_ranges : tuple[tuple[float, float],]
+        A sequence of depth pairs (top and bottom depths) of each soil depth 
+        layer for which soil properties will be aggregated. [cm]
+    chors : Iterator[list[Key, Numeric, int, int]]
+        The component key (not used), the horizon property to be
+        aggregated across all horizons that intersect the depth layer, and
+        horizion depths: hzdept_r [cm], hzdepb_r [cm].
 
     Returns
     -------
-    bool
-        Returns True if soil horizon is determined to be Dense, False if 
-        not or if it can't be determined.
+    The weighted average of the property across all horizons that intersect
+    the layer
+        
     """
-    txt_a = np.array([sand, silt, clay], dtype=np.float16)
-    idx = txt_a != txt_a
-    blanks = np.sum(idx)
-    if blanks == 1:
-        # Replace missing fine earth fraction
-        txt_a[idx] = 100 - np.nansum(txt_a)
+    try:
+        # only query chors that have a value
+        # query by depth range
+        # Use below for proton activity mean
+        # if pH:
+        #     transform1 = toH #lambda ph: 10**-ph
+        #     transform2 = vectorize(topH) # lambda H: -log10(H)
+        # else:
+        #     transform1 = nada #lambda ph: ph
+        #     transform2 = nada #lambda H: H
 
-    elif blanks > 1:
-        # Null values for more than one, return False
-        return False
-    # All values required to run the Dense Layer calculation are available
-    if np.sum(txt_a) != 100:
-        return False
+        prop_a = np.zeros((len(d_ranges), 2), dtype= np.float32) * np.nan
 
-    if db <= 1.45:
-        # it isn't dense, no matter the fine earth composition
-        # smallest b: 0.2081 and 1.25 + 0.2081 = 1.4581
+        # Aggregate property for each intersecting horizon
+        for horizon in chors:
+            # unpack
+            horizon = list(horizon)
+            prop_i = horizon[-1] # transform1(horizon[-1])
+            h_depths = horizon[1:3]
+            
+            horzByLayer(h_depths, d_ranges, prop_a, prop_i) #, propCalc)
+
+        return prop_a[:,1] / prop_a[:,0] #transform2(prop_a[:,1] / prop_a[:,0])
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
         return False
-    a_coef = np.array([0.0165, 0.013, 0.0125])
-    b_coef = np.array([0.002081, 0.003912, 0.0024351])
-    a = db - (txt_a * a_coef).sum()
-    b = (txt_a * b_coef).sum()
-    if a > b:
-        # This is a Dense Layer
-        return True
-    else:
-        # This is not a Dense Layer
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        raise
+
+    
+def horzModal(d_ranges: tuple[tuple[float, float],],
+           chors: Iterator[list[Key, str, int, int]],
+    ) -> list[str]:
+    """Determines the dominant categorical soil property by soil layer depths 
+    from each genetic soil horizon. It is called by horizons grouped cokey
+
+    Parameters
+    ----------
+    d_ranges : tuple[tuple[float, float],]
+        A sequence of depth pairs (top and bottom depths) of each soil depth 
+        layer for which soil properties will be aggregated. [cm]
+    chors : Iterator[list[Key, str, int, int]]
+        The component key (not used), the categorical horizon property, and
+        horizion depths: hzdept_r [cm], hzdepb_r [cm].
+
+    Returns
+    -------
+    The dominant categorical property for each layer depth
+        
+    """
+    try:
+        # group depths by category for each intersecting horizon
+        categories = []
+        depths = []
+        for horizon in chors:
+            # unpack
+            horizon = list(horizon)
+            categories.append(horizon[-1])
+            h_depths = horizon[1:3]
+            
+            depths.append(
+                [horOverlap(layer_i, h_depths) for layer_i in d_ranges]
+            )
+        # Create a list of dominant properties by depth layer
+        dom_prop = [
+            max(grp_depths := sumby(categories, d_list), key=grp_depths.get) 
+            for d_list in zip(*depths)
+        ]
+    
+        return dom_prop
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
         return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        raise
+        return False
+    
+
+def sumby(cats, values):
+    grpby = {}
+    for cat, dp in zip(cats, values):
+        if cat is None:
+            cat = 'unpopulated'
+        if cat in grpby:
+            grpby[cat] += dp
+        else:
+            grpby[cat] = dp
+    return grpby
 
 
 def horzByLayer(
         h_depths: list[float, float], 
-        d_ranges: tuple[tuple[float, float], ...], 
+        d_ranges: list[list[float, float],], 
         accum_prop: Nx2, 
-        prop_i: tuple[float, float, int], 
-        func: Callable
+        prop_i: Numeric, 
+        #func: Callable
     ):
-    """Accumulates a soil property for all genetic soil horizons that
-    intersect the specified soil layers.
+    """Accumulates a soil property for a genetic soil horizon that
+    intersect the specified depth layers.
 
-    While this function does not return anything, it directly manipulates
+    This function does not return anything as it directly manipulates
     the accum_prop numpy array.
 
     Parameters
@@ -382,203 +446,498 @@ def horzByLayer(
         Top and bottom depths of fixed soil layers [cm].
     accum_prop : np.array
         An array that accumulates the soil property. Must be the same length
-        as d_ranges.
-    prop_i : tuple[float, float, int]
-        Three soil horizon properties
-        1) Percent organic matter
-        2) Soil bulk density: [g]/[cm]^3
-        3) percent volume of rock fragments. Fragment volume is assumed
-        to contribute 0 grams of organic Carbon.
+        as d_ranges. Column 0 is the accumulated thickness 
+        and column 1 the accumulated property
+    prop_i : Numeric
+        Property of the current soil horzion
     func : function
         A function that transforms a soil property. This function will given
         the thickness of the intersection of the genetic soil horizon and
         soil depth layer and the soil property for the genetic soil horizon.
     """
-    prop_ai = np.array([(
-        (thick := overlapRange(layer_i, h_depths)),
-        func(thick, prop_i)
-        )
-        for layer_i in d_ranges
-    ])
-    
-    ### Maybe just call nansum here
+    try:
+        prop_ai = np.array([
+            ((thickness := horOverlap(layer_i, h_depths)), thickness * prop_i)
+            for layer_i in d_ranges
+        ])
+        
+        ### Maybe just call nansum here
+
+        # Index of nan accumulated properties
+        ac_nan = isnan(accum_prop[:,0])
+        ai_nan = isnan(prop_ai[:,0])
+        k_nan = np.logical_and(ac_nan, ai_nan)
+        accum_prop[~k_nan, :] = np.nansum([accum_prop, prop_ai], 0)
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        raise
 
 
-    # Index of nan accumulated properties
-    was_nan = np.isnan(accum_prop)
-    still_nan = np.isnan(prop_ai)
-    # Index of accum_prop cells flipping from nan
-    flipped = np.logical_and(was_nan, ~still_nan)
-    # Prepare accum_prop layer cells that are no longer nan to accept 
-    # new values from prop_ai
-    accum_prop[flipped] = 0
-    # flip nan properties to 0 so they don't propagate to accum_prop
-    prop_ai[still_nan] = 0
-    accum_prop += prop_ai
-    # # Nan trumps value with += operator, so use nansum
-    # accum_prop = np.nansum(np.dstack((accum_prop, prop_ai)), 2)
-    # # But numpy >1.2 nansum returns 0 for nan + nan, but we need nan
-    # accum_prop[still_nan] = np.nan
-    # return accum_prop
-
-
-def horzAg(
-
-        cokey: Key, d_ranges: tuple[tuple[float, float],],
-        chors: Iterator[list[
-            Key, str, float, float, int, int, int, float, float, float,
-            float, float
-        ],],
-        cor1_depth: dict[Key, float], 
-        cor2_depth: dict[Key, float], org_exempt: set[Key,],
-        org_texture: set[Key,], fragvol_d: dict[Key, float],
-        maj_earth_keys: set[Key,]
-    ) -> tuple[Nx2, Nx2, n1x2]:
-    """Aggregates component SOC and AWS by soil layer depths from each 
-    genetic soil horizon.
+def horOverlap(
+        fixed: tuple[float, float], horizon: list[float, float]
+    ) -> float:
+    """Determines the thickness of the overlap between depth ranges
+    of a soil layer and a genetic soil horizon.
 
     Parameters
     ----------
-    cokey : Key
-        Component key used to extract component restriction depths, organic
-        texture flag, and major earthy component flag from cor1_depth, 
-        cor2_depth, and maj_earth variables.
-    d_ranges : tuple[tuple[float, float],]
-        A sequence of depth pairs (top and bottom depths) of each soil depth 
-        layer for which soil properties will be aggregated. [cm]
-    chors : Iterator[list[ 
-        Key, str, float, float, int, int, int, float, float, float, float, float
-    ]]
-        The soil properties retrieved from search cursor of component horizon:
-        chkey, desgnmaster, hzdept_r [cm], hzdepb_r [cm], sandtotal_r [pct],
-        silttotal_r [% volume], claytotal_r [% volume], om_r [% volume], 
-        dbthirdbar_r [g/cm^3], ec_r [ds/m], ph1to1h2o_r [pH], awc_r [% volume]
-    cor1_depth : dict[Key, float]
-        If cokey present, depth to Lithic bedrock, Paralithic bedrock, or 
-        Densic bedrock.
-    cor2_depth : dict[Key, float]
-        If cokey present, depth to Lithic bedrock, Paralithic bedrock, 
-        Densic bedrock, Densic material, Fragipan, Duripan, or Sulfuric.
-    org_exempt : set[Key,]
-        If cokey present, soil is organic and organic surface is not excluded.
-    org_texture : set[Key,]
-        if chkey present, horizon has an organic texture.
-    fragvol_d : dict[Key, float]
-        If chkey present, horizon has rock fragments, [% volume].
-    maj_earth_keys : set[Key,]
-        If cokey present, component is a major soil map unit component.
+    fixed : tuple[float, float]
+        The top and bottom depths of a soil layer.
+    horizon : list[float, float]
+        The top and bottom depths of a genetic soil horizon.
 
     Returns
     -------
-    tuple[Nx2, Nx2, Nx2]
-        Returns three arrays with values and thickness [cm] for each 
-        soil depth layer for available water storage [mm] and 
-        soil organic carbon [g/m^2] and 
-        the total available water storage [mm] within the commodity 
-        root zone and the rootzone depth [cm].
+    float
+        Thickness of the intersection.
+    """
+    try: 
+        depth_r = (
+            (max(fixed[1], horizon[0]) - max(fixed[0], horizon[0]))
+            - (max(fixed[1], horizon[1]) - max(fixed[0], horizon[1]))
+        )
+
+        return depth_r or np.nan
+
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return False
+    
+
+def hor2comp(
+        comps: Iterator[list[Key, Key, int]] , comp_ag_d: dict[Key, Any]
+    )-> list[Any, int]:
+    """Collates aggregated horizon data within a map unit component group
+
+    Parameters
+    ----------
+    comps : Iterator[Key, int, Numeric]
+        A set of components with and each has the map unit key, comonent key, 
+        component percentage
+
+    comp_ag_d : dict[Key, Any]
+        The aggregated horizon property (value) by component key (key)
+
+    Returns
+    -------
+    list[Any, int]
+        aggregated horizon property, component percentage
     """
     try:
-        if cokey in maj_earth_keys:
-            maj_earth = True
+        return [(prop[0], pct) if (prop := comp_ag_d.get(ck)) 
+                else ('not horizonated', pct) for _, ck, pct in comps]
+    except:
+            func = sys._getframe().f_code.co_name
+            arcpy.AddError(pyErr(func))
+            arcpy.AddError(f"{list(comps)}")
+            return None
+
+
+def interp_node(
+        ag_method: str, mapunits: dict, tabs_d: dict,
+        gssurgo_v: str, gdb_p: str, module_p: str, tiebreak: str, 
+        fuzzy: bool, interp_n: str
+                ):
+    try: 
+        # Ignore not rated map units (null ratings)
+        if(gssurgo_v == "1.0" and ag_method 
+           in ('Most Limiting', 'Least Limiting', 'Weighted Average')
+        ):
+            # 'cokey', 'interphrc', 'interphr'
+            with arcpy.da.SearchCursor(**tabs_d['cointerp1nn']) as sCur:
+                # cokey: [interp class, interp value]
+                cointerp_d = {ck: [cl, val] for ck, cl, val in sCur}
+        elif gssurgo_v == "1.0":
+            # 'cokey', 'interphrc', 'interphr'
+            with arcpy.da.SearchCursor(**tabs_d['cointerp1']) as sCur:
+                # cokey: [interp class, interp value]
+                cointerp_d = {ck: [cl, val] for ck, cl, val in sCur}
+        elif(
+            ag_method in ('Most Limiting', 'Least Limiting', 'Weighted Average')
+        ):
+            # Read in mdruleclass table
+            with arcpy.da.SearchCursor(**tabs_d['mdruleclass']) as sCur:
+                mdrules = dict(sCur)
+            # Read in cointerp table
+            # 'cokey', 'interphrck', 'interphr'
+            with arcpy.da.SearchCursor(**tabs_d['cointerp2nn']) as sCur:
+                # cokey: [interp class, interp value]
+                cointerp_d = {
+                    ck: [mdrules[cls_k], val] for ck, cls_k, val in sCur
+                }
         else:
-            maj_earth = False
-        if cokey in org_exempt:
-            # Don't need to verify organic surface horizon
-            org_flag = False
-        else:
-            org_flag = True
-        org_thick = 0
-        # Does a corestriction truncate commondity root zone
-        if cokey in cor2_depth:
-            b_depth = cor2_depth[cokey]
-        else:
-            b_depth = 150
+            # Read in mdruleclass table
+            with arcpy.da.SearchCursor(**tabs_d['mdruleclass']) as sCur:
+                mdrules = dict(sCur)
+            # Read in cointerp table
+            # 'cokey', 'interphrck', 'interphr'
+            with arcpy.da.SearchCursor(**tabs_d['cointerp2']) as sCur:
+                # cokey: [interp class, interp value]
+                cointerp_d = {
+                    ck: [mdrules[cls_k], val] for ck, cls_k, val in sCur
+                }
 
-        aws_a = np.zeros((len(d_ranges), 2), dtype= np.float32) * np.nan
-        soc_a = np.zeros((len(d_ranges), 2), dtype= np.float32) * np.nan
-        aws_r = np.zeros((1, 2), dtype= np.float32) * np.nan
-        # calculate SOC and AWS for each layer from component horizons
-        for horizon in chors:
-            horizon = list(horizon)
-            chkey = horizon[1]
-            hor = horizon[2]
-            h_depths1 = horizon[3: 5]
-            h_depths2 = h_depths1
-            sand = horizon[5]
-            silt = horizon[6]
-            clay = horizon[7]
-            om = horizon[8]
-            db = horizon[9]
-            ec = horizon[10]
-            ph = horizon[11]
-            awc_i = horizon[-1]
+        if ag_method == 'Dominant Component':
+            cokeys = dom_com(tabs_d, gssurgo_v, gdb_p, module_p)
+            
+            with (
+            arcpy.da.InsertCursor(**tabs_d['property']) as iCur,
+            arcpy.da.SearchCursor(**tabs_d['comp2']) as sCur,
+            ):
+                for mk, ck, pct in sCur:
+                    if ck in cokeys and ck in cointerp_d:
+                        cl_val = cointerp_d[ck] #cl = cointerp_d[ck][0]
+                        iCur.insertRow([mapunits.get(mk), mk, pct] + cl_val) #+ cl
+            return True
 
-            # get horizon Fragment volume
-            if chkey in fragvol_d:
-                frag_v = fragvol_d[chkey]
-            else:
-                frag_v = 0
-            # get bedrock depth, exclude OM recorded for bedrock
-            if (br_depth := cor1_depth.get(cokey)) and br_depth < h_depths2[1]:
-                if br_depth <= h_depths2[0]:
-                    om = None
-                # This condition really should never happen
-                else:
-                    h_depths2 = (h_depths2[0], br_depth)
-
-            if awc_i is not None:
-                horzByLayer(h_depths1, d_ranges, aws_a, (awc_i,), awsCalc)
-            if (om is not None) and db:
-                horzByLayer(
-                    h_depths2, d_ranges, soc_a, (om, db, frag_v), socCalc
-                )
-
-            # AWS commodity Rootzone
-            if maj_earth:
-                # if an organic horizon will not be checked for pH and density
-                if chkey in org_texture or hor in ('O', 'L'):
-                    org_hor = True
-                else:
-                    org_hor = False
-                # Check if part of an organic surface
-                if org_flag:
-                    if org_hor:
-                        # accumulate top organic horizon
-                        org_thick += (h_depths1[1] - h_depths1[0])
-                    else:
-                        # any subsequent organic horizons assumed buried
-                        org_flag = False
-                # if not below restriction from a higher horizon
-                # or below 150cm, check if horz is restrictive to commodidty:
-                #   bulk density, EC and pH restrictions
-                if h_depths1[0] < b_depth:
-                    # Does EC truncate commodity root zone
-                    if ec and ec >= 12:
-                        print(f"{ec=}; {cokey=}")
-                        b_depth = min(h_depths1[0], b_depth)
-                        h_depths1[1] = min(h_depths1[1], b_depth)
-                    # is horizon too acidic, 
-                    # organic soils exempt as AL toxicity not an issue 
-                    # per Bob Dobos
-                    elif not org_hor and ph and ph <= 3.5 :
-                        print(f"{ph=}; {cokey=}")
-                        b_depth = min(h_depths1[0], b_depth)
-                        h_depths1[1] = min(h_depths1[1], b_depth)
-                    # is horizon too dense, 
-                    # organic soils exempt as never too dense
-                    elif not org_hor and checkDensity(db, sand, silt, clay):
-                        print(f"{db=}; {cokey=}")
-                        b_depth = min(h_depths1[0], b_depth)
-                        h_depths1[1] = min(h_depths1[1], b_depth)
-                    # Calc AWS contribution to commondity rootzone
-                    if awc_i is not None and not org_flag:
-                        # Call horzByLayer for single layer, AWS rootzone
-                        horzByLayer(
-                            h_depths1, ((org_thick, b_depth),),
-                            aws_r, (awc_i,), awsCalc
+        if ag_method == 'Weighted Average':
+            # remove class column
+            del_fld = tabs_d['property']['field_names'].pop(3)
+            arcpy.management.DeleteField(
+                tabs_d['property']['in_table'], del_fld
+            )
+            # No interp class with Weighted Average
+            with (
+                arcpy.da.SearchCursor(**tabs_d['comp2']) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                for mk, comps in groupby(sCur, iget(0)):
+                    # collate inteprs values by map unit, mk just place holder
+                    # for comp_wtavg rating class, percent, rating
+                    cointerps = [
+                            [mk, ck, pct, cint[1]] for _, ck, pct in comps 
+                            if(cint := cointerp_d.get(ck))
+                        ] or [[mk, '', None, None],]
+                    if len(cointerps) > 1:
+                        pct, val = comp_wtavg(cointerps)
+                        val = round(val, 2)
+                        iCur.insertRow(
+                            [mapunits.get(mk), mk, pct, val]
                         )
-                       
-        return (aws_a, soc_a, aws_r)
+                    else:
+                        _, _, pct, val = cointerps[0]
+                        if val:
+                            val = round(val, 2)
+                        iCur.insertRow(
+                            [mapunits.get(mk), mk, pct, val]
+                        )
+            return True
+        
+        # to sort by interp class
+        if ag_method == "Dominant Condition":
+            with (
+                arcpy.da.SearchCursor(**tabs_d['comp2']) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                if tiebreak == 'Higher':
+                    vi = -1
+                    null = -1
+                else:
+                    vi = 0
+                    null = 2
+                for mk, comps in groupby(sCur, iget(0)):
+                    # collate inteprs values by map unit 
+                    # [mk, ck, % composition, interp rating, interp class]
+                    cointerps = [
+                        [mk, ck, pct, cint[1], cint[0]] 
+                        for _, ck, pct in comps 
+                        if(cint := cointerp_d.get(ck))
+                    ] or [[mk, ck, None, 0, 'Not Rated'],]
+                    # Determine which interp class is dominant
+                    # Where compsition tied, max valued class returned
+                    if len(cointerps) > 1:
+                        pct, cl, val = comp_con(cointerps, 4, vi, null) #pct, cl, val = comp_con(cointerps, 4, vi, null)
+                    else:
+                        _, _, pct, val, cl = cointerps[0]
+                    iCur.insertRow([mapunits.get(mk), mk, pct, cl, val])
+
+        # Least or Most
+        else:
+            # Determine if interp is a suitability or limitation
+            sa_p = gdb_p + '/sainterp'
+            with arcpy.da.SearchCursor(
+                sa_p, 'interptype', where_clause=f"interpname = '{interp_n}'"
+            ) as sCur:
+                itype = next(sCur)[0]
+            arcpy.AddMessage(f"Evaluating as {itype}")
+            # Function dicitionary
+            v_lev = None
+            func_d = {
+                1: lambda ci: ci[2] == v_lev, # filter by fuzzy value
+                2: lambda ci: ci[1] == cls, # filter by interp class
+                'Least Limitinglimitation': min,
+                'Most Limitingsuitability': min,
+                'Least Limitingsuitability': max,
+                'Most Limitinglimitation': max,
+                3: 1, # slice only first element
+                4: 2, # slice both elements
+            }
+            f_func = func_d[fuzzy + 1]
+            m_func = func_d[ag_method + itype]
+            #i = func_d[fuzzy + 3]
+
+            with (
+                arcpy.da.SearchCursor(**tabs_d['comp2']) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                for mk, comps in groupby(sCur, iget(0)):
+                    # collate inteprs values by map unit 
+                    # [% composition, interp class, interp value]
+                    cointerps = [
+                        [pct, *cint] for _, ck, pct in comps 
+                        if(cint := cointerp_d.get(ck))
+                    ] or [[None, 'Not Rated', None],]
+                    # find minimum interp value
+                    if len(cointerps) > 1:
+                        pcts, clss, vals = list(zip(*cointerps))
+                        # get min or max fuzzy value
+                        v_lev = m_func(vals)
+                        # get interp class of selected fuzzy value
+                        cls = clss[vals.index(v_lev)]
+
+                        # apply indexing function to filter and sum %
+                        pct = sum([
+                                i_grp[0] for i_grp in filter(f_func, cointerps)
+                        ])
+                        cl_and_val = [cls, v_lev]
+
+                    else:
+                        pct = cointerps[0][0]
+                        cl_and_val = cointerps[0][1:]
+                    iCur.insertRow(
+                        [mapunits.get(mk), mk, pct] + cl_and_val#[:i]
+                    )
+        return True
+
+    except arcpy.ExecuteError:
+        arcpy.AddError(f"{cl_and_val}")
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        arcpy.AddError(f"{cl_and_val}")
+        arcpy.AddError(f"{[mapunits.get(mk), mk, pct] + cl_and_val[:i]}")
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return False
+    
+
+def comp_node(
+        ag_method: str, mapunits: dict, tabs_d: dict, gssurgo_v: str,
+        gdb_p: str, module_p: str, tiebreak: str, p: int, q: str, delim: str,
+        comp_ag_d: dict[Key, Numeric]=None, domain_d= {}, pH:bool=False
+    ):
+    # mukey, component percent, specified property
+    try:
+        if comp_ag_d:
+            # where information aggregated from other than component
+            comp_call = 'comp2'
+        else:
+            comp_call = 'comp1'
+        
+        if ag_method == 'Dominant Component':
+            ####### This needs to use Dominant Comp table #########
+            cokeys = dom_com(tabs_d, gssurgo_v, gdb_p, module_p)
+            if tabs_d[comp_call]['where_clause']:
+                tabs_d[comp_call]['where_clause'] += \
+                    f""" AND cokey IN ({q}{delim.join(cokeys)}{q})"""
+            else:
+                tabs_d[comp_call]['where_clause'] += \
+                    f""" cokey IN ({q}{delim.join(cokeys)}{q})"""
+
+            with (
+                    arcpy.da.InsertCursor(**tabs_d['property']) as iCur,
+                    arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
+                ):
+                # Numeric, round to p and no sequence field
+                if p is not None:
+                    if comp_ag_d:
+                            for mk, ck, pct in sCur:
+                                # is it the dom com with horizon data?
+                                if ck in comp_ag_d:
+                                    iCur.insertRow(
+                                        [mapunits.pop(mk), mk, pct, 
+                                        round(comp_ag_d[ck][0], p)]
+                                    )
+                    else:
+                        for mk, ck, pct, prop in sCur:
+                                iCur.insertRow(
+                                    [mapunits.pop(mk), mk, pct, prop]
+                                )
+                    # Populate Null
+                    for mk, asym in mapunits.items():
+                        iCur.insertRow([asym, mk, None, None])
+                else:
+                    if comp_ag_d:
+                        for mk, ck, pct in sCur:
+                            # is it the dom com with horizon data?
+                            if ck in comp_ag_d:
+                                #prop = comp_ag_d[ck][0]
+                                iCur.insertRow(
+                                    [mapunits.pop(mk), mk, pct, 
+                                     comp_ag_d[ck][0], prop, domain_d[prop]]
+                                )
+                    else:
+                        for mk, ck, pct, prop in sCur:
+                            iCur.insertRow(
+                                [mapunits.pop(mk), mk, pct, 
+                                 prop, domain_d[prop]]
+                            )
+                    # Populate Null
+                    for mk, asym in mapunits.items():
+                        iCur.insertRow([asym, mk, None, None, None])
+
+        elif ag_method == 'Weighted Average':
+            with (
+                arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                if comp_ag_d:
+                    # Activate if proton activity mean is desired
+                    # if pH:
+                    #     transform1 = toH #lambda ph: 10**-ph
+                    #     transform2 = topH2 # lambda H: round(-log10(H), p)
+                    # else:
+                    #     transform1 = nada # lambda ph: ph
+                    #     transform2 = nada2 # lambda prop_x: round(prop_x, p)
+                    for mk, comps in groupby(sCur, iget(0)):
+                        comps_p=[
+                            # transform1(hor[0]
+                            (mk, ck, pct, hor[0]) 
+                            for mk, ck, pct in comps
+                            if (hor := comp_ag_d.get(ck)) 
+                        ]
+                        if comps_p:
+                            # arcpy.AddMessage(f"{comps_p}")
+                            pct, prop = comp_wtavg(comps_p)
+                            iCur.insertRow(
+                                # transform2(prop, p)
+                                [mapunits.pop(mk), mk, pct, round(prop, p)]
+                            )
+                else:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        pct, prop = comp_wtavg(comps)
+                        iCur.insertRow(
+                            [mapunits.pop(mk), mk, pct, round(prop, p)]
+                        )
+                # Populate Null
+                for mk, asym in mapunits.items():
+                    iCur.insertRow([asym, mk, None, None])
+
+        elif ag_method == "Dominant Condition":
+            # sort by third element, the property
+            with (
+                arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                if tiebreak == 'Higher':
+                    vi = -1
+                else:
+                    vi = 0
+                if comp_ag_d:
+                    # apply function to comps that look up sequence?
+                    for mk, comps in groupby(sCur, iget(0)):
+                        comps_p = hor2comp(comps, comp_ag_d)
+                        comps_p2 = domain_it(comps_p, domain_d)
+                        pct, prop, seq = comp_con(comps_p2, 3, vi, None)
+                        iCur.insertRow([mapunits.pop(mk), mk, pct, prop, seq])
+                else:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        comps_p2 = domain_it(comps, domain_d)
+                        pct, prop, seq = comp_con(comps_p2, 3, vi, None)
+                        iCur.insertRow([mapunits.pop(mk), mk, pct, prop, seq])
+                # Populate Null
+                for mk, asym in mapunits.items():
+                    iCur.insertRow([asym, mk, None, None, None])
+
+        elif ag_method == "Percent Present":
+            # This method requires a selection of a primary constraint
+            # remove seq column
+            del_fld = tabs_d['property']['field_names'].pop()
+            arcpy.management.DeleteField(
+                tabs_d['property']['in_table'], del_fld
+            )
+            with (
+                arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                if comp_ag_d:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        props = set()
+                        pct = 0
+                        for _, ck, c_pct in comps:
+                            if(h_props := comp_ag_d.get(ck)):
+                                props.update(h_props)
+                                pct += c_pct
+                        # prop_str = ', '.join(props)
+                        iCur.insertRow(
+                            [mapunits.pop(mk), mk, sum(pcts), ', '.join(props)] #prop_str, domain_d[prop_str]
+                        )
+                else:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        # Sum percents of comps and collate primary in map unit
+                        pcts, props = zip(*[comp[2:] for comp in comps])
+                        props = set(props)
+                        # prop_str = ', '.join(props)
+                        iCur.insertRow(
+                            [mapunits.pop(mk), mk, sum(pcts), ', '.join(props)] #prop_str, domain_d[prop_str]
+                        )
+                # Populate 0% present
+                for mk, asym in mapunits.items():
+                    iCur.insertRow([asym, mk, 0, ''])
+
+        else:
+            if ag_method == "Maximum":
+                m_func = max
+            else:
+                m_func = min
+            with (
+                arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
+                arcpy.da.InsertCursor(**tabs_d['property']) as iCur
+            ):
+                if comp_ag_d:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        # find maximum WTA depth layer
+                        prop_d = {}
+                        for mk, ck, pct in comps:
+                            # Get property data for cokey and prop not null
+                            if((prop_i := comp_ag_d.get(ck))
+                               and not isnan(prop_i[0])):
+                                if prop_d.get(prop_i[0]):
+                                    prop_d[prop_i[0]] += pct
+                                else:
+                                    prop_d[prop_i[0]] = pct
+                        if prop_d:
+                            p_sel = m_func(prop_d.keys())
+                            iCur.insertRow(
+                                [mapunits.pop(mk), mk, prop_d[p_sel], 
+                                 round(p_sel, p)]
+                            )
+                else:
+                    for mk, comps in groupby(sCur, iget(0)):
+                        prop_d = {}
+                        for mk, ck, pct, prop_i in comps:
+                            if prop_i in prop_d:
+                                prop_d[prop_i] += pct
+                            else:
+                                prop_d[prop_i] = pct
+                        if prop_d:
+                            p_sel = m_func(prop_d.keys())
+                        iCur.insertRow(
+                            [mapunits.pop(mk), mk, prop_d[p_sel], 
+                             round(p_sel, p)]
+                        )
+                # Populate Null
+                for mk, asym in mapunits.items():
+                    iCur.insertRow([asym, mk, None, None])
+
+        return True
     except arcpy.ExecuteError:
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
@@ -589,96 +948,44 @@ def horzAg(
         return False
 
 
-def nccpiAg(
-        nccpi_i: Iterator[list[Key, float, float, float, float, float]]
-    ) -> n5:
-    """Retrive and order NCCPI for each component.
-
-    Parameters
-    ----------
-    nccpi : Iterator[list[Key, float, float, float, float, float]
-        Groupby Iterator object that has ckey, and the five NCCPI values,
-        37149: 'small grain', 37150: 'cotton', 44492: 'soy', 
-        54955: 'NCCPI', 57994: 'corn'
-
-    Returns
-    -------
-    n5
-        Numpy array with 5 floats values:
-        NCCPI values ordered: corn, soy, cotton, small grain, NCCPI
-    """
-    sg, cotton, soy, nccpi, corn = list(nccpi_i)
-    # strip rule key as they are now sorted
-    return np.array(
-        [corn[1], soy[1], cotton[1], sg[1], nccpi[1]], dtype= np.float32
-    )
+def comp_it(p_pct):
+    # Could create a variant that treats Null as 0
+    _, _, pct, prop = p_pct
+    return prop * pct, pct
 
 
-def comp_ag_deep(
-        comps: Iterator[list[ Key, Key, int],],
-        comp_horz_d: dict[Key, tuple[Nx2]],
-        n_rows: int, keepKeys
+def comp_wtavg(
+        comps: Iterator[list[ Key, Key, int, Numeric],],
     ) -> tuple[float, int]:
-    """This function summarizes all the bits of information for each 
-    component of a map unit. It recevies data grouped by map unt from the
-    groupby function.
+    """Weighted average
 
     Parameters
     ----------
-    comps : Iterator[list[Key, Key, float, str, str, str, str, str, str],]
+    comps : Iterator[list[Key, int, Numeric],]
         These are the elements packaged by map unit from the groupby interator 
         from the component table. For each component the following elements
         are sent:
         0) Key: map unit key (mukey)
         1) Key: component key (cokey)
         2) Component percentage
+        3) Cotinuous attribute
 
-    comp_horz_d : dict[Key, tuple[Nx2]]
-        dictionary of the horizon data aggregated by each soil depth layer
-        by component, where N is the number of soil depth layers. Each
-        row is the aggregated property and the thickness of intersection.
-        Key: component key (cokey)
-        First array: is the available water storage [mm]
-        Second array: is the soil organic Carbon [g/m^2]
-        Third array: is the available water storage of the NCCPI 
-        "root zone" [cm]
-    n_rows : int
-        The number of soil depth layers.
 
     Returns
     -------
     bool : tuple[float, int]
-        Aggrgated by map unit, summed percentage of involved components, 
-        summed percentage of all components, weighted average 
+        Aggregated by map unit: 
+            0) sum of component percentages
+            1) weighted average of the soil component property
         Will return an empty tuple if unsuccessful.
     """
     try:
-        comp_pct_sum = 0
-        prop = 0
-        aws_pct = 0
+        # comp_it unpacks and returns weighted property and pct
+        # zip puts all wgted properties and pcts in respecitve lists
+        # which are each summed
+        prop_sum, comp_pct_sum = map(sum, zip(*map(comp_it, comps)))
 
-        # The numpy arrays store the thickness of intersection [0] and
-        # accumulated property for each depth layer [1]
-        prop_lyrs = np.zeros((n_rows, 2), dtype= np.float32) * np.nan
-
-        for _, cokey, pct, prop in comps:
-            if not pct:
-                # skip component as it contributes nothing
-                # what if aws is null?
-                continue
-            co_pro = pct / 100
-            comp_pct_sum += pct
-
-            # Summarize AWS and SOC
-            if cokey in comp_horz_d:
-                aws_lyrs_i = comp_horz_d[cokey]
-                if aws_lyrs_i.any():
-                    nanSum(aws_lyrs, aws_lyrs_i * co_pro)
-                    aws_pct += pct
-
-
-
-        return (prop_lyrs, comp_pct_sum)
+        return (comp_pct_sum, prop_sum / comp_pct_sum)
 
     except arcpy.ExecuteError:
         func = sys._getframe().f_code.co_name
@@ -690,54 +997,122 @@ def comp_ag_deep(
         msg = pyErr(func)
         arcpy.AddError(msg)
         return () # msg + f"{nccpi_d[cokey]=}; {cokey=}"
+    
 
-
-def comp_it(p_pct):
-    _, prop, pct = p_pct
-    if prop:
-        return prop * pct, pct
-    else:
-        return 0, 0
-
-
-def comp_ag_base_wtavg(
-        comps: Iterator[list[ Key, int, float],],
-    ) -> tuple[float, int]:
-    """Weighted average
+def comp_con(
+        comps: Iterator[list[ Key, Key, int, int, str],], 
+        k: int, vi: int, null: Numeric, 
+    ) -> list[int, str]:
+    """_summary_
 
     Parameters
     ----------
-    comps : Iterator[list[Key, Key, float, str, str, str, str, str, str],]
+    comps : Iterator[list[Key, Key, int, int, str],]
         These are the elements packaged by map unit from the groupby interator 
         from the component table. For each component the following elements
         are sent:
         0) Key: map unit key (mukey)
-        1) Component percentage
-        2) Cotinuous attribute
-
+        1) Key: component key (cokey)
+        2) Component percentage
+        3) Interp rating value or domain sequence of class
+        4) Interp rating class or property class
+    k : int
+        The position class elements are being sorted and grouped by
+    vi : int
+        Index position, either 0 (min) or -1 (max). 
+        Really only relavent when there is a tie where two or more
+        class components % sums to the most dominant condition.
 
     Returns
     -------
-    bool : tuple[float, int]
-        Aggrgated by map unit, weighted average of the soil component property
-        and the sum of components that weighted the property.
-        Will return an empty tuple if unsuccessful.
+    list[int, str]
+        1) Summed percentage of the dominant condition
+        2) property  or interp class (str) 
     """
     try:
-        prop_sum, comp_pct_sum = map(sum, zip(*map(comp_it, comps)))
+        v_class = dict()
+        # sort and group components by class
+        for cls, p_grp in groupby(sorted(comps, key=iget(k)), key=iget(k)):
+            # sum percentage by class
+            pcts = 0
+            rat_seq = 0
+            c_count = 0
+            for prop_p in p_grp:
+                pcts += prop_p[2]
+                c_count += 1
+                if prop_p[3] != None:
+                    rat_seq += prop_p[3]
+                else:
+                    rat_seq = None
+            # The class value of any interp class will do, class is the same
+            # [sequence/interp val, class, summed sequence/interp]
+            v_cl = prop_p[3:] + [rat_seq, c_count]
+            # replace None with null value or max/min will error out
+            if v_cl[0] == None:
+                v_cl[0] = null
+            if pcts in v_class:
+                v_class[pcts].add(v_cl)
+            # Keep a sorted list of all property sets of the same % composition
+            else:
+                v_class[pcts] = SortedList([v_cl])
 
-        return (prop_sum / comp_pct_sum, comp_pct_sum)
+        # get max % composition
+        max_pct = max(v_class.keys())
+        # get minimum max_pct and return class
+        v_sel = v_class[max_pct][vi]
+        if v_sel[2] is None:
+            return max_pct, v_sel[1], None
+        return max_pct, v_sel[1], v_sel[2] / v_sel[3]
+        # return max_pct, v_class[max_pct][vi][-1]
 
-    except arcpy.ExecuteError:
-        func = sys._getframe().f_code.co_name
-        msg = arcpyErr(func)
-        arcpy.AddError(msg)
-        return ()
     except:
+        arcpy.AddError(f"{prop_p} | {v_sel}")
         func = sys._getframe().f_code.co_name
         msg = pyErr(func)
         arcpy.AddError(msg)
-        return () # msg + f"{nccpi_d[cokey]=}; {cokey=}"
+
+
+def domain_it(
+        comps: Iterator[list[ Key, Key, int, str],],
+        domain_d
+    ) -> list[Key, Key, int, str, int]:
+    """Inserts the domain sequence into the comps package to direct tie breaks
+    in Dominant Condition aggregation
+
+    Parameters
+    ----------
+    comps : Iterator[list[Key, Key, int, Any],]
+        These are the elements packaged by map unit from the groupby interator 
+        from the component table. For each component the following elements
+        are sent:
+        0) Key: map unit key (mukey)
+        1) Key: component key (cokey)
+        2) Component percentage
+        3) nominal property class
+
+    Returns
+    -------
+    list[Key, Key, int, int, str]
+        0) Key: map unit key (mukey)
+        1) Key: component key (cokey)
+        2) Component percentage
+        3) Domain sequence index 
+        4) nominal property class
+    """
+    try:
+        comps2 = []
+        for comp in comps:
+            comp = list(comp)
+            choice = comp[3]
+            seq = domain_d[choice]
+            comp.insert(3, seq)
+            comps2.append(comp)
+        return comps2
+    except:
+        arcpy.AddError(f"{comps=} | {domain_d=}")
+        func = sys._getframe().f_code.co_name
+        msg = pyErr(func)
+        arcpy.AddError(msg)
 
 
 def main(args):
@@ -746,53 +1121,299 @@ def main(args):
         gdb_p = args[1] # SSURGO database
         table = args[2] # SSURGO table summarized attribute sourced from
         att_col = args[3] # The table column being summarized
-        ag_method = args[4] # Aggregation method
+        agg_meth = args[4] # Aggregation method
         prim_constraint = args[5] # criteria
-        sec_constraint = args[6] # criteria
-        d_ranges = args[7]
-        month1 = args[8]
-        month2 = args[9]
-        tie_break = args[10]
-        null0_b = args[11]
-        comp_cut = args[12]
-        ifuzzy_b = args[13]
-        null_rat_b = args[14]
-        prop_range = args[15]
+        sec_table = args[6]
+        sec_att = args[7]
+        sec_constraint = args[8] # criteria
+        d_ranges = args[9]
+        month1 = args[10]
+        tie_break = args[11]
+        null0_b = args[12]
+        comp_cut = args[13]
+        fuzzy_b = args[14]
+        null_rat_b = args[15]
+        # custom: [Column Physical Name, Logical data type, Unit of measure]
+        # sdv: all SDV Attribute fields
         sdv_dict = args[16] # SDV row as dictionary
-        major_b = False # args[17] # Only consider major components
+        major_b = args[17] # args[17] # Only consider major components
+        custom_b = args[18]
+        primNOT = args[19]
+        secNOT = args[20]
+        module_p = args[21]
 
+        arcpy.AddMessage(f"Summarize Soil Information {v=}")
         arcpy.env.workspace = gdb_p
         arcpy.env.overwriteOutput = True
-        where = np.where
-        isnan = np.isnan
 
-        # Read in SDV attribute row
-        if sdv_select:
-
-        # tables needed
-        # table: [[Fields], 'query', [sql clause]]
         in_table = 'in_table'
         field_names = 'field_names'
         where_clause = 'where_clause'
         sql_clause = 'sql_clause'
-        gssurgo_v = getVersion({
-            'version': {
-                in_table: gdb_p + '/version',
-                field_names: ['name', 'version'], 
-                where_clause:"name = 'gSSURGO" 
-            }}) 
-        if gssurgo_v == '2.0':
-            # 37149: 'small grain', 37150: 'cotton', 44492: 'soy', 
-            # 54955: 'NCCPI', 57994: 'corn'
-            nccpi_keys = (37149, 37150, 44492, 54955, 57994)
-            arcpy.management.ImportXMLWorkspaceDocument(
-                gdb_p, f"{module_p}/valu1_v2.xml", "SCHEMA_ONLY"
-            )
+
+        # Aggregation Algorithms and acronymns 
+        agg_d = {
+            "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
+            "Minimum": 'MIN', "Maximum": 'MAX', "Weighted Average": 'WTA', 
+            "Percent Present": 'PP', 'Least Limiting': 'LL', 
+            'Most Limiting': 'ML'
+        }
+
+        # Create domain dictionary
+        # if agg_meth == "Dominant Condition" and table != 'cointerp':
+        try:
+            db_p = f"{gdb_p}/mdstattabcols"
+            with (arcpy.da.SearchCursor(
+                db_p, 'domainname', where_clause=f"colphyname = '{att_col}'"
+            ) as sCur):
+                dom_n = next(sCur)[0]
+
+            db_p = f"{gdb_p}/mdstatdomdet"
+            with (arcpy.da.SearchCursor(
+                db_p, ['choice', 'choicesequence'], 
+                where_clause= f"domainname = '{dom_n}'"
+            ) as sCur):
+                domain_d = dict(sCur)
+        except:
+            domain_d = None
+
+        above_comp = {'mapunit', 'muaggatt'}
+        if table.startswith('ch'):
+            lev1 = 'horizon'
+        elif table == 'cointerp':
+            lev1 = 'interp'
+        elif table in above_comp:
+            lev1 = 'mapunit'
         else:
-            nccpi_keys = ('37149', '37150', '44492', '54955', '57994')
-            arcpy.management.ImportXMLWorkspaceDocument(
-                gdb_p, f"{module_p}/valu1_v1.xml", "SCHEMA_ONLY"
+            lev1 = 'component'
+
+        if not sec_table or table == sec_table:
+            lev2 = None
+        elif sec_table.startswith('ch'):
+            lev2 = 'horizon'
+        else:
+            lev2 = 'component'
+        
+        # Output table name and columns
+        if d_ranges:
+            if len(d_ranges) == 1:
+                dmin = d_ranges[0][0]
+                dmax = d_ranges[0][1]
+                d_cat = f"{dmin}to{dmax}"
+            else:
+                d_cat = "multi"
+                tops, bots = zip(*d_ranges)
+                dmin = min(tops)
+                dmax = max(bots)
+        else:
+            d_ranges = None
+            d_cat = ''
+        if not custom_b:
+            tab_n = f"{sdv_dict['resultcolumnname']}_{agg_d[agg_meth]}_{d_cat}"
+            col_n = tab_n
+            if sdv_dict['attributelogicaldatatype'] == 'Integer':
+                prop_dtype0 = 'LONG # #'
+                prec = 0
+            elif sdv_dict['attributelogicaldatatype'] == 'Float':
+                prop_dtype0 = 'FLOAT # #'
+                prec = sdv_dict['attributeprecision']
+            else:
+                prop_dtype0 = (
+                    f"TEXT # {sdv_dict.get('attributefieldsize') or 254}"
+                )
+                prec = None
+        else:
+            if lev1 == 'interp':
+                # Look up interp name in SDV Attribute: 
+                    # NASIS Rule Name (nasisrulename)
+                # get Result Column Name (resultcolumnname)
+                q = f"nasisrulename = '{att_col}'"
+                q = q.replace("''", "'")
+                db_p = f"{gdb_p}/sdvattribute"
+                with (arcpy.da.SearchCursor(
+                    db_p, "resultcolumnname", where_clause=q
+                ) as sCur):
+                    col_stub = next(sCur)
+                if col_stub:
+                    col_n = f"{col_stub[0]}_{agg_d[agg_meth]}"
+                    tab_n = f"ag_{col_stub[0]}_{agg_d[agg_meth]}"
+                else:
+                    att_col2 = att_col[att_col.index('-') + 2:]
+                    # find all capitalized words
+                    pattern = r"\b[A-Z]\w*\b"
+                    caps = re.findall(pattern, att_col2)
+                    # pattern to remove vowels
+                    tt = str.maketrans("","","aeiouyAEIOUY")
+                    trunk = ''.join(
+                        [w[:2] + w[2:].translate(tt)[0] + w.translate(tt)[-1]  
+                        if len(w)>4 else w for w in caps]
+                    )
+                    tab_n = f"ag_{trunk}_{agg_d[agg_meth]}"
+                    col_n = f"{trunk}_{agg_d[agg_meth]}"
+                prop_dtype0 = 'TEXT # 254'
+                prop_dtype1 = 'Float # #'
+                prec = 2
+            else:
+                # if integer or float make _class field TEXT of length 1
+                # if TEXT make _val field short integer
+                # only 2 SDV table columns both integer and have a domain
+                tab_n = f"ag_{table}_{att_col}_{agg_d[agg_meth]}_{d_cat}"
+                col_n = f"{att_col}_{agg_d[agg_meth]}_{d_cat}"
+                if sdv_dict[1] == 'Integer':
+                    prop_dtype = 'Numeric'
+                    prop_dtype1 = 'LONG # #'
+                    prec = 0
+                elif sdv_dict[1] == 'Float':
+                    prop_dtype = 'Numeric'
+                    prop_dtype1 = 'FLOAT # #'
+                    prec = sdv_dict[4]
+                else:
+                    prop_dtype = 'Text'
+                    prop_dtype0 = f'TEXT # {sdv_dict[3] or 254}'
+                    prop_dtype1 = 'SHORT # #'
+                    prec = None
+
+        tab_n = tab_n.strip('_')#.replace(' ','')
+        col_n = col_n.strip('_')
+
+        v_tab = arcpy.ListTables('version')
+        if v_tab:
+            gssurgo_v = getVersion({
+                'version': {
+                    in_table: gdb_p + '/version',
+                    field_names: ['version'], 
+                    where_clause:"name = 'gSSURGO'" 
+                }})
+        else:
+            gssurgo_v = '1.0'
+        if gssurgo_v == '2.0':
+            mk_dtype = "LONG # #"
+            q = ""
+            delim = ", "
+        else:
+            mk_dtype = "TEXT # 30"
+            q = "'"
+            delim = "', '"
+            # Read in interp keys
+            # read in rule keys
+        interpk = None
+        rulek = None
+        
+        arcpy.management.CreateTable(gdb_p, tab_n)
+        if lev1 == "interp": #fuzzy_b and agg_meth in ('Least Limiting', 'Most Limiting'): #if 
+            arcpy.management.AddFields(
+            in_table=f"{gdb_p}/{tab_n}",
+            field_description=(
+                f"AREASYMBOL TEXT # 20 # #;"
+                f"MUKEY {mk_dtype} # #;"
+                f"COMPPCT_R SHORT # # # #;"
+                f"class_{col_n} {prop_dtype0} # #;"
+                f"val_{col_n} {prop_dtype1} # #"),
+            template=None
             )
+            fields = [
+                'AREASYMBOL', 'MUKEY', 'COMPPCT_R', 
+                'class_' + col_n, 'val_' + col_n
+            ]
+        elif prop_dtype == 'Text':
+            arcpy.management.AddFields(
+            in_table=f"{gdb_p}/{tab_n}",
+            field_description=(
+                f"AREASYMBOL TEXT # 20 # #;"
+                f"MUKEY {mk_dtype} # #;"
+                f"COMPPCT_R SHORT # # # #;"
+                f"prop_{col_n} {prop_dtype0} # #;"
+                f"seq_{col_n} {prop_dtype1} # #"),
+            template=None
+            )
+            fields = [
+                'AREASYMBOL', 'MUKEY', 'COMPPCT_R', 
+                'prop_' + col_n, 'seq_' + col_n
+            ]
+        # Numeric
+        else:
+            arcpy.management.AddFields(
+                in_table=f"{gdb_p}/{tab_n}",
+                field_description=(
+                    f"AREASYMBOL TEXT # 20 # #;"
+                    f"MUKEY {mk_dtype} # #;"
+                    f"COMPPCT_R SHORT # # # #;"
+                    f"prop_{col_n} {prop_dtype1} # #"),
+                template=None
+            )
+            fields = ['AREASYMBOL', 'MUKEY', 'COMPPCT_R', 'prop_' + col_n]
+
+        # Dynamically define SQL where statement
+        if primNOT:
+            primNOT = 'NOT '
+        else:
+            primNOT = ''
+        if secNOT:
+            secNOT = 'NOT '
+        else:
+            secNOT = ''
+
+        if prim_constraint:
+            atts = prim_constraint.split(';')
+            prim_str = f"""IN {primNOT} ({", ".join(atts)})"""
+        if sec_constraint:
+            atts = sec_constraint.split(';')
+            sec_str = f"""IN {secNOT} ({", ".join(atts)})"""
+
+        # -- Secondary aggregation levels
+        # Acquire cokeys of components that satisfy constraint
+        # Secondary levels are always component level, 
+        # exception being chorizon property can be surmized by a chorizon cat
+        if sec_table and sec_table != 'component' and sec_table != table:
+            with arcpy.da.SearchCursor(
+                f"{gdb_p}/{sec_table}", 'cokey', where_clause=sec_str) as sCur:
+                cks = [ck for ck, in sCur]
+            ck_str = f"""cokey IN ({q}{delim.join(cks)}{q})"""
+        else:
+            ck_str = ''
+
+        # Used when component is the primary table
+        comp_where1 = f"{att_col} IS NOT NULL"
+        # Otherwise
+        comp_where2 = ""
+        if comp_cut:
+            comp_where1 += f" AND comppct_r >= {comp_cut}"
+            comp_where2 = f"comppct_r >= {comp_cut}"
+        if major_b:
+            comp_where1 += " AND majcompflag = 'Yes'"
+            comp_where2 = "majcompflag = 'Yes'"
+        if prim_constraint and table == 'component':
+            comp_where1 += f" AND {att_col} {prim_str}"
+        if sec_table == 'component':
+            comp_where1 += f" AND {sec_att} {sec_str}"
+            if comp_where2:
+                comp_where2 += f" AND {sec_att} {sec_str}"
+            else:
+                comp_where2 = f"{sec_att} {sec_str}"
+        elif sec_table:
+            comp_where1 += f" AND {ck_str}"
+            if comp_where2:
+                comp_where2 += f" AND {ck_str}"
+            else:
+                comp_where2 = ck_str
+
+        # When chorizon is primary table
+        if d_ranges:
+            ch_where = f" hzdepb_r >= {dmin} AND hzdept_r <= {dmax}"
+        else:
+            ch_where = "hzdept_r IS NOT NULL AND hzdepb_r IS NOT NULL"
+            # Shouldn't be anything deeper...
+            d_ranges = [[0, 10000],]
+        if table == 'chorizon':
+            ch_where += f" AND {att_col} IS NOT NULL"
+        if prim_constraint and table == 'chorizon':
+            ch_where += f" AND {att_col} {prim_str}"
+        if sec_table == 'chorizon':
+            ch_where += f" AND {sec_att} {sec_str}"
+        elif sec_table and ck_str:
+            ch_where += f" AND {ck_str}"
+        
+        #notnull = str.maketrans("", "", f"{att_col} IS NOT NULL AND ")
         
         tabs_d = {
             "chfrags": {
@@ -805,11 +1426,27 @@ def main(args):
                 ),
                 sql_clause: [None, "ORDER BY chkey ASC"]
             },
-            'chorizon': {
+            'chorizon1': {
                 in_table: gdb_p + '/chorizon',
                 field_names: 
-                ['cokey', 'chkey', 'hzdept_r', 'hzdepb_r'] + hor_col,
-                where_clause: "hzdept_r IS NOT NULL AND hzdepb_r IS NOT NULL",
+                ['cokey', 'hzdept_r', 'hzdepb_r', att_col],
+                where_clause: ch_where,
+                sql_clause: [None, "ORDER BY cokey, hzdept_r ASC"]
+            },
+            # cateogorical properties
+            'chorizon1c': {
+                in_table: gdb_p + '/chorizon',
+                field_names: 
+                ['cokey', 'hzdept_r', 'hzdepb_r', att_col],
+                where_clause: ch_where, #.translate(notnull),
+                sql_clause: [None, "ORDER BY cokey, hzdept_r ASC"]
+            },
+            # children of chorizon table
+            'chorizon2': {
+                in_table: gdb_p + '/chorizon',
+                field_names: 
+                ['cokey', 'chkey', 'hzdept_r', 'hzdepb_r'],
+                where_clause: ch_where,
                 sql_clause: [None, "ORDER BY cokey, hzdept_r ASC"]
             },
             "chtexturegrp": {
@@ -824,32 +1461,79 @@ def main(args):
                     ""
                 )
             },
-            "cointerp": {
+            "cointerp1": {
                 in_table: gdb_p + '/cointerp',
-                field_names: ['cokey', 'interphr'],
-                where_clause: f"rulekey IN {nccpi_keys}",
-                sql_clause: [None, "ORDER BY cokey ASC, rulekey ASC"]
+                field_names: ['cokey', 'interphrc', 'interphr'],
+                where_clause: f"rulename = '{att_col}'"
             },
-            'comp_maj': {
+            # Exclude null ratings for LL and ML
+            "cointerp1nn": {
+                in_table: gdb_p + '/cointerp',
+                field_names: ['cokey', 'interphrc', 'interphr'],
+                where_clause: f"rulename = '{att_col}' AND interphr IS NOT NULL"
+            },
+            # gSSURGO > 1.0
+            "cointerp2": {
+                in_table: gdb_p + '/cointerp',
+                field_names: ['cokey', 'interphrck', 'interphr'],
+                where_clause: f"interpkey = {interpk} AND rulekey = {rulek}"
+            },
+            # Exclude null ratings for LL and ML
+            "cointerp2nn": {
+                in_table: gdb_p + '/cointerp',
+                field_names: ['cokey', 'interphrck', 'interphr'],
+                where_clause: (f"interpkey = {interpk} AND rulekey = {rulek}"
+                               "AND interphr IS NOT NULL")
+            },
+            # summarizing a component property
+            'comp1': {
                 in_table: gdb_p + '/component',
-                field_names: ['cokey',  'mukey', 'comppct_r'] + [att_col],
-                where_clause: "comppct_r IS NOT NULL AND majcompflag = Yes",
+                field_names: ['mukey', 'cokey', 'comppct_r', att_col],
+                where_clause: comp_where1,
                 sql_clause: [None, "ORDER BY mukey ASC"]
-
             },
-            'Dominant': {
+            # summarizing a property below component
+            'comp2': {
+                in_table: gdb_p + '/component',
+                field_names: ['mukey', 'cokey', 'comppct_r'],
+                where_clause: comp_where2,
+                sql_clause: [None, "ORDER BY mukey ASC"]
+            },
+            # summarizing a component property for Dominant Component
+            'comp3': {
+                in_table: gdb_p + '/component',
+                field_names: ['mukey', 'cokey', 'comppct_r', att_col],
+                where_clause: comp_where1,
+                sql_clause: [None, "ORDER BY mukey ASC"]
+            },
+            'Dominant1': {
                 in_table: gdb_p + '/DominantComponent',
                 field_names: ['cokey'],
             },
+            "Dominant2": {
+                'in_table': gdb_p + '/DominantComponent',
+                'field_names': ['mukey', 'cokey', 'comppct_r']
+            },
             'legend': {
-                in_table: gdb_p + '/mapunit',
+                in_table: gdb_p + '/legend',
                 field_names: ['lkey', 'areasymbol']
             },
             'mapunit1': {
                 in_table: gdb_p + '/mapunit',
                 field_names: ['mukey', 'lkey']
             },
-
+            'mapunit2': {
+                in_table: gdb_p + '/mapunit',
+                field_names: ['mukey', 'lkey', att_col]
+            },
+            'mdruleclass': {
+                in_table: gdb_p + '/mdruleclass',
+                field_names: ['classkey', 'classtxt']
+            },
+            'property':{
+                in_table: f"{gdb_p}/{tab_n}",
+                field_names: fields
+            },
             # Get date information for metadata
             'sacatalog': {
                 in_table: gdb_p + '/sacatalog',
@@ -863,68 +1547,97 @@ def main(args):
                     "attributename like "
                     "'National Commodity Crop Productivity Index%'"
         )}}
-
-        ### Create table
-        tab_p = f"{gdb_p}/{}"
-        tab_flds = []
         ### Update metadata
 
-        ### Get areasymbol
-            
+        # Activate if proton activity mean is desired
+        # if 'ph1to1h2o' in att_col or 'ph01mcacl2' in att_col:
+        #     pH = True
+        # else:
+        #     pH = False
+
+        # -- Get areasymbol  
         with arcpy.da.SearchCursor(**tabs_d['legend']) as sCur:
             # Legend key: Areasymbol
             legends = dict(sCur)
-            # mukey: 
-        with arcpy.da.SearchCursor(**tabs_d['mapunit1']) as sCur:
-            mapunits = {mk: legends.get(lk) for mk, lk in sCur}
-            
-        if level == 'component':
-            if ag_method == 'Dominant Component':
-                # Check for Dominant Component Table
-                if arcpy.Exists(f"{gdb_p}/DominantComponent"):
-                    with arcpy.da.SearchCursor(**tabs_d['Dominant']) as sCur:
-                        cokeys = {ck for ck, in sCur}
+
+        # -- Map unit
+        if lev1 == 'mapunit':
+            # get mapunit info and call table_write
+            with arcpy.da.SearchCursor(**tabs_d['mapunit2']) as sCur:
+                mapunits = {mk: (legends.get(lk), att) for mk, lk, att in sCur}
+        else:
+            # Otherwise get generic mapunit info
+            with arcpy.da.SearchCursor(**tabs_d['mapunit1']) as sCur:
+                mapunits = {mk: legends.get(lk) for mk, lk in sCur}
+
+        # -- Component Interpretation
+        if lev1 == 'interp':
+            done = interp_node(
+                agg_meth, mapunits, tabs_d, gssurgo_v, gdb_p,
+                module_p, tie_break, fuzzy_b, att_col
+            )
+
+        else:
+            # -- Component Crop Yield
+            if table == 'cocropyld':
+                with arcpy.da.SearchCursor(
+                    gdb_p + "/cocropyld", att_col,
+                    where_clause=(f"cropname = '{prim_constraint} "
+                                f"AND yldunits = {sec_constraint}")
+                    ) as sCur:
+                    comp_ag_d = {ck: prop for ck, prop in sCur}
+
+            # -- Horizon lev1 aggregation
+            elif lev1 == 'horizon':
+                # Call horizon aggregation
+                if prop_dtype == 'Numeric':
+                    with arcpy.da.SearchCursor(**tabs_d['chorizon1']) as sCur:
+                        if agg_meth == "Percent Present":
+                            comp_ag_d = dict()
+                            for ck, _, _, prop in sCur:
+                                if ck in comp_ag_d:
+                                    comp_ag_d[ck].append(prop)
+                                else:
+                                    comp_ag_d[ck] = [prop,]
+                        else:
+                            comp_ag_d = {
+                                ck: horzAg(d_ranges, h) for ck, h  in # ,pH
+                                groupby(sCur, iget(0))
+                            }
                 else:
+                    with arcpy.da.SearchCursor(**tabs_d['chorizon1c']) as sCur:
+                        comp_ag_d = {
+                            ck: horzModal(d_ranges, h) for ck, h  in 
+                            groupby(sCur, iget(0))
+                        }
+            # -- A component table property
+            elif table == 'component':
+                comp_ag_d = None
 
-                with (
-                arcpy.da.InsertCursor(tab_p, tab_flds) as iCur,
-                arcpy.da.SearchCursor(**tabs_d['component1']) as sCur,
-                ):
-                    for ck, mk, pct, prop in sCur:
-                        if ck in cokeys:
-                            iCur.insertRow([mapunits.get(mk), mk, pct, prop])
+            done = comp_node(
+                agg_meth, mapunits, tabs_d, gssurgo_v, gdb_p,
+                module_p, tie_break, prec, q, delim, comp_ag_d, domain_d #, pH
+            )
 
-                        
-
-            with (
-                arcpy.da.InsertCursor('valu1', valu1_flds) as iCur,
-                arcpy.da.SearchCursor(**tabs_d['component1']) as sCur,
-            ):
-                for mk, comps in groupby(sCur, byKey):
-                    mu_t = compAg(
-                        comps, comp_horz_d, n_rows, pwsl_keys, maj_earth_keys, 
-                        nccpi_d
-                    )
-                
-                    iCur.insertRow(v_row)
-
-
-
-
-
-
-
-
-        return True
+            arcpy.management.AddIndex(
+                f"{gdb_p}/{tab_n}", 'MUKEY', tab_n + '_key', True
+            )
+            # arcpy.management.AddIndex(f"{gdb_p}/{tab_n}", col_n, tab_n, False)
+            
+        if done:
+            # Return name of new table
+            return (tab_n, col_n)
+        else:
+            return None
 
     except arcpy.ExecuteError:
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
-        return False
+        return None
     except:
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
-        return False
+        return None
 
 
 if __name__ == '__main__':
