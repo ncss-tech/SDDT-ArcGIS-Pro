@@ -6,7 +6,7 @@ The Download and Construct Databases scripts are fully developed.
 The Summarize Soil Information (analogous to the Create Soil Map functionality in the ArcMap version of SDDT) is now operational and the key aggregation logic in place. The following elements are still planned to be complete:
 1) Symbolize SSURGO feature once added to map
 2) Aggrgation needs to be enabled for the following tables
-  -a. Component Month
+  - a. Component Month
   - Component Moisture
   - Component Ecoclass
   - Component Parent Material grp
