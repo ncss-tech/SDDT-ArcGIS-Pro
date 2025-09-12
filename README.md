@@ -6,26 +6,26 @@ The Download and Construct Databases scripts are fully developed.
 The Summarize Soil Information (analogous to the Create Soil Map functionality in the ArcMap version of SDDT) is now operational and the key aggregation logic in place. The following elements are still planned to be complete:
 1) Symbolize SSURGO feature once added to map
 2) Aggrgation needs to be enabled for the following tables
-  - a. Component Month
+  - Component Month
   - Component Moisture
   - Component Ecoclass
   - Component Parent Material grp
-  e. CH Ashsto
-  f. CH Texture Grp
-  g. CH Unified
-  h. Component Crop Yield
-  i. Component forprod
-  j. fragments
-  k. Component diagnostic horizons 
-  l. Component Soil temp class
-  m. CH designation suffix
-  n. Component Restrictions
-  o. Component Taxonomic Moisture Class
-  p. CH Structure
-  q. CH Pores
-  s. Component Parent Material
-  t. Component Canopy Cover
-  u. Component Plants
+  - CH Ashsto
+  - CH Texture Grp
+  - CH Unified
+  - Component Crop Yield
+  - Component forprod
+  - fragments
+  - Component diagnostic horizons 
+  - Component Soil temp class
+  - CH designation suffix
+  - Component Restrictions
+  - Component Taxonomic Moisture Class
+  - CH Structure
+  - CH Pores
+  - Component Parent Material
+  - Component Canopy Cover
+  - Component Plants
 4) Add SDV category filters
 5) Handle multiple depth layers?
 
