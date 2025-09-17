@@ -12,10 +12,10 @@ The following elements are still planned to be complete:
 2. Aggrgation needs to be enabled for the following tables
    - Component Month
    - Component Moisture
+   - CH Texture Grp
    - Component Ecoclass
    - Component Parent Material grp
    - CH Ashsto
-   - CH Texture Grp
    - CH Unified
    - Component Crop Yield
    - Component forprod
