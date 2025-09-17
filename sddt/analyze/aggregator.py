@@ -2,14 +2,16 @@
 # -*- coding: utf-8 -*-
 """
 
-
 @author: Alexander Stum
 @maintainer: Alexander Stum
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@Version: 0.3.2
+@Version: 0.3.3
 
+# --- 
+Updated 09/17/2025; v 0.3.3
+- When DominantComponent table hasn't be created, the tab_d key was incorrect
 # --- 
 Updated 08/19/2025; v 0.3.2
 - Consolidated comp_hi_con and comp_lo_con into comp_con and fixed errors
@@ -43,7 +45,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.3.2'
+v = '0.3.3'
 
 
 import arcpy
@@ -168,7 +170,7 @@ def dom_com(tabs_d, gs_v, gdb_p, module_p):
         if not arcpy.Exists(f"{gdb_p}/DominantComponent"):
             # Create Dominant Component table is it doesn't exist
             arcpy.AddMessage('Creating Dominant Component table')
-            with arcpy.da.SearchCursor(**tabs_d['comp_maj2']) as sCur:
+            with arcpy.da.SearchCursor(**tabs_d['comp2']) as sCur:
                 # groupby mukey, then sort by percent and select last (largest)
                 dom_com_d = {
                     mk: sorted([(pct, ck) for _, ck, pct in comps])[-1] 
@@ -176,11 +178,13 @@ def dom_com(tabs_d, gs_v, gdb_p, module_p):
                 }
             construct_p = os.path.dirname(module_p) + '/construct'
             if gs_v == "1.0":
+                arcpy.AddMessage(f"{construct_p}/DominantComponent_v1.xml")
                 arcpy.management.ImportXMLWorkspaceDocument(
                     gdb_p, 
                     f"{construct_p}/DominantComponent_v1.xml", "SCHEMA_ONLY"
                 )
             else:
+                arcpy.AddMessage(f"{construct_p}/DominantComponent_v2.xml")
                 arcpy.management.ImportXMLWorkspaceDocument(
                     gdb_p, 
                     f"{construct_p}/DominantComponent_v2.xml", "SCHEMA_ONLY"
@@ -742,8 +746,14 @@ def comp_node(
             comp_call = 'comp1'
         
         if ag_method == 'Dominant Component':
+            # Specify only major components
+            if tabs_d[comp_call]['where_clause']:
+                tabs_d[comp_call]['where_clause'] += " AND majcompflag = 'Yes'"
+            else:
+                tabs_d[comp_call]['where_clause'] += "majcompflag = 'Yes'"
             ####### This needs to use Dominant Comp table #########
             cokeys = dom_com(tabs_d, gssurgo_v, gdb_p, module_p)
+
             if tabs_d[comp_call]['where_clause']:
                 tabs_d[comp_call]['where_clause'] += \
                     f""" AND cokey IN ({q}{delim.join(cokeys)}{q})"""
