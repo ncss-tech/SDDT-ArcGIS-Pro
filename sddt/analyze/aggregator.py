@@ -7,8 +7,12 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@Version: 0.3.3
+@Version: 0.3.4
 
+# --- 
+Updated 09/23/2025; v 0.3.4
+- There are apparently components with Null % composition. Filtering those out
+    at SearchCursor
 # --- 
 Updated 09/17/2025; v 0.3.3
 - When DominantComponent table hasn't be created, the tab_d key was incorrect
@@ -45,7 +49,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.3.3'
+v = '0.3.4'
 
 
 import arcpy
@@ -720,13 +724,13 @@ def interp_node(
         return True
 
     except arcpy.ExecuteError:
-        arcpy.AddError(f"{cl_and_val}")
+        # arcpy.AddError(f"{cointerps}")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
         return False
     except:
-        arcpy.AddError(f"{cl_and_val}")
-        arcpy.AddError(f"{[mapunits.get(mk), mk, pct] + cl_and_val[:i]}")
+        # arcpy.AddError(f"{cl_and_val}")
+        # arcpy.AddError(f"{[mapunits.get(mk), mk, pct] + cl_and_val[:i]}")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return False
@@ -747,19 +751,13 @@ def comp_node(
         
         if ag_method == 'Dominant Component':
             # Specify only major components
-            if tabs_d[comp_call]['where_clause']:
-                tabs_d[comp_call]['where_clause'] += " AND majcompflag = 'Yes'"
-            else:
-                tabs_d[comp_call]['where_clause'] += "majcompflag = 'Yes'"
+            tabs_d[comp_call]['where_clause'] += " AND majcompflag = 'Yes'"
+
             ####### This needs to use Dominant Comp table #########
             cokeys = dom_com(tabs_d, gssurgo_v, gdb_p, module_p)
 
-            if tabs_d[comp_call]['where_clause']:
-                tabs_d[comp_call]['where_clause'] += \
-                    f""" AND cokey IN ({q}{delim.join(cokeys)}{q})"""
-            else:
-                tabs_d[comp_call]['where_clause'] += \
-                    f""" cokey IN ({q}{delim.join(cokeys)}{q})"""
+            tabs_d[comp_call]['where_clause'] += \
+                f""" AND cokey IN ({q}{delim.join(cokeys)}{q})"""
 
             with (
                     arcpy.da.InsertCursor(**tabs_d['property']) as iCur,
@@ -1076,7 +1074,8 @@ def comp_con(
         # return max_pct, v_class[max_pct][vi][-1]
 
     except:
-        arcpy.AddError(f"{prop_p} | {v_sel}")
+        # arcpy.AddError(f"comps: {list(comps)}")
+        # arcpy.AddError(f"{prop_p} | {v_sel}")
         func = sys._getframe().f_code.co_name
         msg = pyErr(func)
         arcpy.AddError(msg)
@@ -1383,29 +1382,23 @@ def main(args):
             ck_str = ''
 
         # Used when component is the primary table
-        comp_where1 = f"{att_col} IS NOT NULL"
+        comp_where1 = f"comppct_r IS NOT NULL AND {att_col} IS NOT NULL"
         # Otherwise
-        comp_where2 = ""
+        comp_where2 = "comppct_r IS NOT NULL"
         if comp_cut:
             comp_where1 += f" AND comppct_r >= {comp_cut}"
-            comp_where2 = f"comppct_r >= {comp_cut}"
+            comp_where2 = f"AND comppct_r >= {comp_cut}"
         if major_b:
             comp_where1 += " AND majcompflag = 'Yes'"
-            comp_where2 = "majcompflag = 'Yes'"
+            comp_where2 = "AND majcompflag = 'Yes'"
         if prim_constraint and table == 'component':
             comp_where1 += f" AND {att_col} {prim_str}"
         if sec_table == 'component':
             comp_where1 += f" AND {sec_att} {sec_str}"
-            if comp_where2:
-                comp_where2 += f" AND {sec_att} {sec_str}"
-            else:
-                comp_where2 = f"{sec_att} {sec_str}"
+            comp_where2 += f" AND {sec_att} {sec_str}"
         elif sec_table:
             comp_where1 += f" AND {ck_str}"
-            if comp_where2:
-                comp_where2 += f" AND {ck_str}"
-            else:
-                comp_where2 = ck_str
+            comp_where2 += f" AND {ck_str}"
 
         # When chorizon is primary table
         if d_ranges:
