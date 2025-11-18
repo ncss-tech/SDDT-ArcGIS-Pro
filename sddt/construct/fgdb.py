@@ -9,11 +9,18 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 2/19/2025
+@modified 11/18/2025
     @by: Alexnder Stum
-@version: 0.7
+@version: 0.8.1
 
-
+# --- 11/18/2025; v 0.8.1
+- Added a garbage collection to importList to eliminate 
+"Workspace or data source is read only" errors
+- improved error handling with funYield
+- formatted feature processing time messages
+# --- 11/14/2025; v 0.8
+- Distinguished between making a leaner cointerp and multipart MUPOLYGON with
+new parameter single_b
 # ---
 Updated 10/29/24; v 0.7
 - Point and line features were not getting fully populated due to indexing
@@ -245,15 +252,16 @@ def funYield(
         # initialize first set of processes
         outputs = {
             fn(**params, **constSets): params
+            # params: fn(**params, **constSets)
             for params in it.islice(fn_inputs, len(iterSets))
         }
         # output, params = outputs.popitem()
         yield [0, '']
 
     except:
-        arcpy.AddWarning('Better luck next time')
+        arcpy.AddWarning('Error occured in funYield')
         func = sys._getframe().f_code.co_name
-        msgs = pyErr(func)
+        msgs = f"{outputs.get('').get('table')}: {pyErr(func)}"
         yield [2, msgs]
 
 
@@ -452,6 +460,9 @@ def importCoint(ssa_l: list[str],
     """
     try:
         # time.sleep(0.01)
+        arcpy.Delete_management("memory")
+        gc.collect()
+        try_again = True
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
         nccpi_sub = {'37149', '37150', '44492', '57994'}
@@ -472,15 +483,32 @@ def importCoint(ssa_l: list[str],
             )
             if light_b:
                 for row in csvReader:
-                    # If a main rule interp or NCCPI commodity
-                    interp_k = row[1]
-                    rule_k = row[4]
-                    if (interp_k == rule_k 
-                        or (interp_k == "54955" and rule_k in nccpi_sub)):
-                        # Slice out excluded elements
-                        row = row[:7] + row[11:13] + row[15:]
-                        # replace empty sets with None
-                        iCur.insertRow(tuple(v or None for v in row))
+                    try:
+                        # If a main rule interp or NCCPI commodity
+                        interp_k = row[1]
+                        rule_k = row[4]
+                        if (interp_k == rule_k 
+                            or (interp_k == "54955" and rule_k in nccpi_sub)):
+                            # Slice out excluded elements
+                            row = row[:7] + row[11:13] + row[15:]
+                            # replace empty sets with None
+                            iCur.insertRow(tuple(v or None for v in row))
+                    except:
+                        etype, exc, tb = sys.exc_info()
+                        exc = str(exc)
+                        if ("Workspace or data source is read only" in exc
+                            and try_again):
+                            try_again = False
+                            arcpy.AddWarning("Trying cointerp again")
+                            arcpy.AddWarning(f"{ssa}: {row}")
+                            del iCur
+                            #sCur = arcpy.da.SearchCursor(tab_p, fields[-1])
+
+                            iCur = arcpy.da.InsertCursor(tab_p, fields)
+                            iCur.insertRow(tuple(v or None for v in row))
+                        else:
+                            raise
+
             else:
                 for row in csvReader:
                     # Slice out excluded elements
@@ -494,6 +522,8 @@ def importCoint(ssa_l: list[str],
     except arcpy.ExecuteError:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -506,6 +536,8 @@ def importCoint(ssa_l: list[str],
     except:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -551,7 +583,9 @@ def importList(ssa_l: list[str],
         An empty string if successful, otherwise and error message.
     """
     try:
-        # time.sleep(0.02)
+        # arcpy.Delete_management("memory")
+        gc.collect()
+        try_again = True
         arcpy.env.workspace = gdb_p
         csv.field_size_limit(2147483647)
         txt = table_d[table][0]
@@ -563,6 +597,20 @@ def importList(ssa_l: list[str],
         cols.sort()
         fields = [f[1] for f in cols]
         iCur = arcpy.da.InsertCursor(tab_p, fields)
+        try:
+            iCur.fields
+        except:
+            etype, exc, tb = sys.exc_info()
+            exc = str(exc)
+            if 'workspace already in transaction mode' in exc:
+                arcpy.AddWarning(f'here: {table}')
+                del iCur
+                arcpy.Delete_management("memory")
+                gc.collect()
+                iCur = arcpy.da.InsertCursor(tab_p, fields)
+                arcpy.AddMessage(f"{table}: {iCur.fields}")
+
+        # r_msg = ''
         for ssa in ssa_l:
             # Make file path for text file
             txt_p = f"'{input_p}/{ssa.upper()}/{sub_fld}/{txt}.txt'"
@@ -583,7 +631,17 @@ def importList(ssa_l: list[str],
                 except:
                     etype, exc, tb = sys.exc_info()
                     exc = str(exc)
-                    if "Field length exceeded" in exc:
+
+                    if ("Workspace or data source is read only" in exc
+                        and try_again):
+                        try_again = False
+                        arcpy.AddWarning(f"Trying {table} again")
+                        del iCur
+                        iCur = arcpy.da.InsertCursor(tab_p, fields)
+                        iCur.insertRow(tuple(v or None for v in row))
+
+                    elif "Field length exceeded" in exc:
+                        # r_msg = '#' + table
                         result = re.search(f'Field: (.*). Value', exc)
                         fld = result.group(1)
                         row = tuple(v or None for v in row)
@@ -609,11 +667,15 @@ def importList(ssa_l: list[str],
                         iCur.insertRow(new_row)
                     else:
                         del iCur
+                        arcpy.Delete_management("memory")
+                        gc.collect()
                         func = sys._getframe().f_code.co_name
                         arcpy.AddError(pyErr(func))
                         raise
 
         del csvReader, iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         if fld_dict:
             arcpy.AddWarning(f'\tField lengths exceeded in {table}')
             for fld, max_found in fld_dict.items():
@@ -621,12 +683,16 @@ def importList(ssa_l: list[str],
                     f"\t\t{fld}, record with {max_found} characters, "
                     f"truncated to {tab_flds[fld][1]}"
                 )
+                time.sleep(1)
+        
         arcpy.AddMessage(f"\tSuccessfully populated {table}")
-        return 0 # None
+        return '' # None
 
     except arcpy.ExecuteError:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -635,11 +701,14 @@ def importList(ssa_l: list[str],
             pass
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
-        return 1 # arcpyErr(func)
+        # raise
+        return table # arcpyErr(func)
     except Exception as e:
         arcpy.AddError(f"exception: {type(e).__name__}, {e.args}")
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -648,7 +717,8 @@ def importList(ssa_l: list[str],
             pass
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
-        return 1 # pyErr(func)
+        # raise
+        return table # pyErr(func)
 
 
 def importSet(ssa_l: list[str], 
@@ -712,11 +782,15 @@ def importSet(ssa_l: list[str],
                         key_s.add(row[ki])
                         iCur.insertRow(row)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         return ''
 
     except arcpy.ExecuteError:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -733,6 +807,8 @@ def importSet(ssa_l: list[str],
                     size = 0
                 arcpy.AddMessage(f"{fields[i]}: {size}")
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -823,6 +899,8 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
                 # replace empty sets with None
                 iCur.insertRow(tuple(v or None for v in row))
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         # Populate the month table
         months = [
             (1, 'January'), (2, 'February'), (3, 'March'), (4, 'April'),
@@ -835,12 +913,16 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
         for month in months:
             iCur.insertRow(month)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
 
         return table_d
 
     except arcpy.ExecuteError:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -853,6 +935,8 @@ def importSing(ssa: str, input_p: str, gdb_p: str) -> dict:
     except:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -935,10 +1019,15 @@ def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
                     for params in it.islice(fn_inputs, len(done))
                 })
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
     except arcpy.ExecuteError:
         arcpy.Delete_management("memory")
+        gc.collect()
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -946,8 +1035,11 @@ def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
         return ['error']
     except:
         arcpy.Delete_management("memory")
+        gc.collect()
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -1019,11 +1111,16 @@ def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
                     for params in it.islice(fn_inputs, len(done))
                 })
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         # arcpy.AddMessage(f"\tMU processing time: {time.time() - ti}")
     except arcpy.ExecuteError:
         arcpy.Delete_management("memory")
+        gc.collect()
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -1031,8 +1128,11 @@ def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
         return ['error']
     except:
         arcpy.Delete_management("memory")
+        gc.collect()
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         func = sys._getframe().f_code.co_name
@@ -1042,7 +1142,7 @@ def big_mu_append(mu_gdb_p: str, survey_l: list[str,],epsg: int, tm: str):
 
 def appendFeatures(
         gdb_p: str, feat: list[str], input_f: str, ssa_l: list[str], 
-        light_b: bool, inputXML: xml
+        single_b: bool, inputXML: xml
     )-> list[str]:
     """Appends spatial features to File Geodatabase
     
@@ -1107,7 +1207,7 @@ def appendFeatures(
         # if there are features
         if feat_l:
             # Append and dissolve MUPOLYGON features
-            if light_b and (feat_gdb == 'MUPOLYGON'):
+            if not single_b and (feat_gdb == 'MUPOLYGON'):
                 # If greater than 50 surveys, append in parallel
                 if len(feat_l) > 50:
                     feat_p = f"{gdb_p}/{feat_gdb}"
@@ -1159,6 +1259,7 @@ def appendFeatures(
                         field_mapping=schema
                     )
                     arcpy.management.Delete("memory")
+                    gc.collect()
                     # arcpy.AddMessage(f"MU processing time {time.time() - ti}")
             # If not SAPOLYGON or MUPOLYGON, append
             elif feat_gdb != 'SAPOLYGON':
@@ -1189,6 +1290,7 @@ def appendFeatures(
                 sort_d = {ssa: None for ssa, in sCur}
                 del sCur
                 arcpy.management.Delete("memory")
+                gc.collect()
                 arcpy.management.AddSpatialIndex(feat_p)
                 cnt = int(arcpy.management.GetCount(feat_p).getOutput(0))
                 arcpy.management.DeleteField(feat_p, 'ORIG_FID')
@@ -1202,6 +1304,7 @@ def appendFeatures(
         if (feat_gdb == 'MUPOLYGON') and (cnt == 0):
             arcpy.AddMessage(f"\tThere were no features appended to {feat_gdb}")
             arcpy.management.Delete("memory")
+            gc.collect()
             return ['empty error']
         # No MUPOINT, MULINE, or special features
         elif cnt == 0:
@@ -1213,11 +1316,13 @@ def appendFeatures(
 
     except arcpy.ExecuteError:
         arcpy.management.Delete("memory")
+        gc.collect()
         func = sys._getframe().f_code.co_name
         arcpy.AddError(arcpyErr(func))
         return ['error']
     except:
         arcpy.management.Delete("memory")
+        gc.collect()
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return ['error']
@@ -1409,6 +1514,7 @@ def gSSURGO(input_p: str,
             aoi: str,
             label: str,
             light_b: bool,
+            single_b: bool,
             module_p: str,
             gssurgo_v: str,
             v: str
@@ -1441,11 +1547,15 @@ def gSSURGO(input_p: str,
         appropriate projection.
     label : str
         Used to label SSURGO file geodatabase and in metadata
-    light_b : str
+    light_b : bool
         Whether to build a light version of SSURGO file geodatabase.
         A light version only includes main interpretations in the cointerp
         table, as well as NCCPI sub-interps, and dissolves MUPOLYOGN into
         a multipart feature
+    single_b : bool
+        Keep MUPOLYGON as a single part geometries or 
+            to dissolves MUPOLYOGN into a multipart features where the MUSYM
+            and AREASYMBOL are the same
     module_p : str
         Path to the fgdb.py module where other helper files are found
     ggsurgo_v : str
@@ -1495,13 +1605,13 @@ def gSSURGO(input_p: str,
         for feat in features:
             ti = time.time()
             survey_l = appendFeatures(
-                gdb_p, feat, input_p, survey_l, light_b, inputXML
+                gdb_p, feat, input_p, survey_l, single_b, inputXML
             )
             if 'error' in survey_l:
                 return False
             elif 'error empty' in survey_l:
                 return False
-            arcpy.AddMessage(f"\t\tprocessing time: {time.time() - ti}")
+            arcpy.AddMessage(f"\t\tprocessing time: {time.time() - ti:.1f} sec")
             gc.collect()
 
         # ---- call importSing
@@ -1519,22 +1629,7 @@ def gSSURGO(input_p: str,
         if msg:
             arcpy.AddError(msg)
             return False
-        # Tables which are unique to each SSURGO soil survey area
         
-        tabs_uniq = [
-            'component', 'cosurfmorphhpp', 'legend', 'chunified','cocropyld',
-            'chtexturegrp', 'cosurfmorphss', 'coforprod', 'sacatalog',
-            'cosurfmorphgc', 'cotaxmoistcl', 'chtext', 'chconsistence',
-            'chtexture', 'copmgrp', 'cosoilmoist', 'mucropyld', 'chtexturemod',
-            'cotext', 'coecoclass', 'cosurfmorphmr', 'cosurffrags',
-            'cotreestomng', 'cosoiltemp', 'sainterp', 'chstructgrp',
-            'distlegendmd', 'copwindbreak', 'chdesgnsuffix', 'corestrictions',
-            'cotaxfmmin', 'chstruct', 'chfrags', 'coforprodo', 'distmd',
-            'mutext', 'legendtext', 'muaggatt', 'chorizon', 'cohydriccriteria',
-            'chpores', 'chaashto', 'coerosionacc', 'copm', 'comonth',
-            'muaoverlap', 'cotxfmother', 'mapunit', 'coeplants', 'laoverlap',
-            'cogeomordesc', 'codiagfeatures', 'cocanopycover'
-        ]
         # Exclude these cointerp columns
         # interpll, interpllc, interplr, interplrc, interphh, interphhc
         exclude_i = {8, 9, 10, 11, 14, 15}
@@ -1551,6 +1646,21 @@ def gSSURGO(input_p: str,
                 arcpy.AddError(co_out)
                 return False
 
+        # Tables which are unique to each SSURGO soil survey area
+        tabs_uniq = [
+            'component', 'cosurfmorphhpp', 'legend', 'chunified','cocropyld',
+            'chtexturegrp', 'cosurfmorphss', 'coforprod', 'sacatalog',
+            'cosurfmorphgc', 'cotaxmoistcl', 'chtext', 'chconsistence',
+            'chtexture', 'copmgrp', 'cosoilmoist', 'mucropyld', 'chtexturemod',
+            'cotext', 'coecoclass', 'cosurfmorphmr', 'cosurffrags',
+            'cotreestomng', 'cosoiltemp', 'sainterp', 'chstructgrp',
+            'distlegendmd', 'copwindbreak', 'chdesgnsuffix', 'corestrictions',
+            'cotaxfmmin', 'chstruct', 'chfrags', 'coforprodo', 'distmd',
+            'mutext', 'legendtext', 'muaggatt', 'chorizon', 'cohydriccriteria',
+            'chpores', 'chaashto', 'coerosionacc', 'copm', 'comonth',
+            'muaoverlap', 'cotxfmother', 'mapunit', 'coeplants', 'laoverlap',
+            'cogeomordesc', 'codiagfeatures', 'cocanopycover'
+        ]
         # Create parameter dictionary with gdb table name and text file folder
         paramSet = [
             {'table': tab, 'sub_fld': 'tabular'} for tab in tabs_uniq
@@ -1582,7 +1692,8 @@ def gSSURGO(input_p: str,
                 # else:
                 if output:
                     # arcpy.AddError(f"Failed to populate {paramBack['table']}")
-                    arcpy.AddError(output)
+                    arcpy.AddError(f"{paramBack=}")
+                    arcpy.AddError(f"{output=}")
                     import_all = False
             except GeneratorExit:
                 arcpy.AddWarning("passed")
@@ -1593,10 +1704,13 @@ def gSSURGO(input_p: str,
         del import_jobs
         gc.collect()
         if not import_all:
+            # arcpy.AddError("It is here 2\n\n")
             return False
         # arcpy.AddMessage(f"time: {time.time() - ti}")
 
-        if not versionTab(input_p, gdb_p, gssurgo_v, light_b, v, survey_l[0]):
+        if not versionTab(
+            input_p, gdb_p, gssurgo_v, light_b, single_b, v, survey_l[0]
+        ):
             arcpy.AddWarning('Version table failed to populate successfully.')
 
         if gssurgo_v != '1.0':
@@ -1903,6 +2017,8 @@ def schemaChange(
             for row in csv_r:
                 iCur.insertRow(row)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
 
         # update mdstattabcols
         # update field lengths and/or datatype, i.e. make keys numeric
@@ -1957,6 +2073,8 @@ def schemaChange(
             for row in csv_r:
                 iCur.insertRow(tuple(v or None for v in row))
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
 
         # Add new Relationships to mdstatrshipmas and mdstatrshipdet tables
         mdrel_stat_p = gdb_p + '/mdstatrshipmas'
@@ -1983,6 +2101,8 @@ def schemaChange(
         for row in row_det_l:
             iCur.insertRow(row)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
 
         # Update mdstatidxmas and mdstatidxdet tables
         mdid_stat_p = gdb_p + '/mdstatidxmas'
@@ -2023,10 +2143,14 @@ def schemaChange(
                 iCur.insertRow(row[:2] + [row[-1]])
                 idx_det_l.append(row[0:4])
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         iCur = arcpy.da.InsertCursor(mdid_det_p, mdid_det_cols)
         for row in idx_det_l:
             iCur.insertRow(row)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
 
         # Populate mdruleclass table
         # leave iCur open in case new interp classes found
@@ -2044,6 +2168,8 @@ def schemaChange(
                 class_d[class_txt] = class_i
         class_sz = len(class_d)
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         arcpy.AddMessage("\tSuccessfully populated mdruleclass")
 
         # Read cinterp.txt
@@ -2131,6 +2257,8 @@ def schemaChange(
                     ])
         arcpy.AddMessage("\tSuccessfully populated cointerp")
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         # insert any new found interp classes
         if len(class_d) != class_sz:
             arcpy.AddMessage(f"Adding {len(class_d)} new interp classes")
@@ -2138,6 +2266,8 @@ def schemaChange(
             for class_txt, class_k in class_d.items():
                 iCur.insertRow([class_txt, class_k])
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         # Delete rulekey if light
 
         # Populate mdrule table
@@ -2150,6 +2280,8 @@ def schemaChange(
             # [rulename, ruledepth, seq], [interpkey, rulekey]
             iCur.insertRow([*v, *k])
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         arcpy.AddMessage("\tSuccessfully populated mdrule")
 
         # Sainterp table
@@ -2184,6 +2316,8 @@ def schemaChange(
                     mdinterp_d[interp_k] = row[1:7]
                 iCur.insertRow([interp_k, *row[-2:]])
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         arcpy.AddMessage("\tSuccessfully populated sainterp")
 
         # populate mdinterp table
@@ -2196,12 +2330,16 @@ def schemaChange(
         for k, vals in mdinterp_d.items():
             iCur.insertRow([*vals, k])
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         arcpy.AddMessage("\tSuccessfully populated mdinterp")
         return True
 
     except arcpy.ExecuteError:
         try:
             del iCur
+            arcpy.Delete_management("memory")
+            gc.collect()
         except:
             pass
         try:
@@ -2218,15 +2356,18 @@ def schemaChange(
             pass
         try:
             del uCur
+
         except:
             pass
+        arcpy.Delete_management("memory")
+        gc.collect()
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return False
 
 
 def versionTab(
-        input_p: str, gdb_p: str, gssurgo_v: str, light: bool, 
+        input_p: str, gdb_p: str, gssurgo_v: str, light: bool, single: bool,
         script_v: str, ssa: str
     )-> bool:
     """This function populates the version table within the FGDB.
@@ -2240,7 +2381,9 @@ def versionTab(
     gssurgo_v : str
         gSSURGO version
     light : bool
-        Whether a light version of SSURGO file geodatabase was created. 
+        Whether a light version of cointerp.
+    single : bool
+        Whether single part or multipart MUPOLYGON 
     script_v : str
         Version of the fgdb.py script.
     ssa : str
@@ -2292,15 +2435,20 @@ def versionTab(
         }
         if light:
             version_d['abbrev1'] = ('Abbreviation Level', 'cointerp', '0.5')
-            version_d['abbrev2'] = ('Abbreviation Level', 'MUPOLYGON', '1.0')
         else:
             version_d['abbrev1'] = ('Abbreviation Level', 'cointerp', '0.0')
+            
+        if single:
             version_d['abbrev2'] = ('Abbreviation Level', 'MUPOLYGON', '0.0')
+        else:
+            version_d['abbrev2'] = ('Abbreviation Level', 'MUPOLYGON', '1.0')
         version_p = f"{gdb_p}/version"
         iCur = arcpy.da.InsertCursor(version_p, ['type', 'name', 'version'])
         for vals in version_d.values():
             iCur.insertRow([*vals])
         del iCur
+        arcpy.Delete_management("memory")
+        gc.collect()
         arcpy.AddMessage("\tSuccessfully populated version")
         return True
     
@@ -2360,6 +2508,10 @@ def main(args) -> bool:
             A light version only includes main interpretations in the cointerp
             table, as well as NCCPI sub-interps, and dissolves MUPOLYOGN into
             a multipart feature
+        single_b : str
+            Keep MUPOLYGON as a single part geometries or 
+            to dissolves MUPOLYOGN into a multipart features where the MUSYM
+            and AREASYMBOL are the same
         ggsurgo_v : str
             Version of gSSURGO to build. Traditional (version 1) has string
             character keys and a more cumbersome cointerp/sainterp schema.
@@ -2377,7 +2529,7 @@ def main(args) -> bool:
     """
     # %% m
     try:
-        v = '0.7'
+        v = '0.8.1'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
@@ -2394,7 +2546,8 @@ def main(args) -> bool:
         aoi = args[11]
         light_b = args[12]
         gssurgo_v = args[13]
-        module_p = args[14]
+        single_b = args[14]
+        module_p = args[15]
 
         if gssurgo_v == 'gSSURGO 2.0':
             gssurgo_v = '2.0'
@@ -2433,8 +2586,8 @@ def main(args) -> bool:
                     arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
                     gdb_p = f"{output_p}/gSSURGO_{state}.gdb"
                     gdb_b = gSSURGO(
-                        input_p, survey_l, gdb_p, aoi, state, light_b, module_p,
-                        gssurgo_v, v
+                        input_p, survey_l, gdb_p, aoi, state, light_b, single_b,
+                        module_p, gssurgo_v, v
                     )
                     if gdb_b:
                         gdb_l.append(gdb_p)
@@ -2479,7 +2632,7 @@ def main(args) -> bool:
             arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
             gdb_p = output_p
             gdb_b = gSSURGO(
-                input_p, survey_l, gdb_p, aoi, '', light_b, module_p,
+                input_p, survey_l, gdb_p, aoi, '', light_b, single_b, module_p,
                 gssurgo_v, v
             )
             if gdb_b:
@@ -2546,8 +2699,8 @@ def main(args) -> bool:
                 arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
                 gdb_p = f"{output_p}/gSSURGO_{label}_{geog}.gdb"
                 gdb_b = gSSURGO(
-                    input_p, survey_l, gdb_p, aoi, label, light_b, module_p,
-                    gssurgo_v, v
+                    input_p, survey_l, gdb_p, aoi, label, light_b, single_b,
+                     module_p, gssurgo_v, v
                 )
                 if gdb_b:
                     gdb_l.append(gdb_p)
@@ -2560,8 +2713,8 @@ def main(args) -> bool:
             if len(survey_l := survey_str.split(';')):
                 arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
                 gdb_b = gSSURGO(
-                    input_p, survey_l, gdb_p, aoi, '', light_b, module_p, 
-                    gssurgo_v, v
+                    input_p, survey_l, gdb_p, aoi, '', light_b, single_b, 
+                    module_p, gssurgo_v, v
                 )
                 if gdb_b:
                         gdb_l.append(gdb_p)
@@ -2605,8 +2758,8 @@ def main(args) -> bool:
             
             arcpy.AddMessage(f'\nProcessing {len(survey_l)} surveys')
             gdb_b = gSSURGO(
-                input_p, survey_l, gdb_p, aoi, 'CONUS', light_b, module_p,
-                gssurgo_v, v
+                input_p, survey_l, gdb_p, aoi, 'CONUS', light_b, single_b,
+                module_p, gssurgo_v, v
             )
             if gdb_b:
                 gdb_l.append(gdb_p)
