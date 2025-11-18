@@ -1814,7 +1814,6 @@ def createIndices(gdb_p: str, module_p: str, gssurgo_v: str) -> bool:
         False.
     """
     try:
-        arcpy.AddMessage('\n\tAdding attribute indices...')
         # Any field involved with a Relationship Class is already indexed
         if (gssurgo_v.split('.')[0]) == '2':
             csv_p = module_p + "/md_index_insert2.csv"
@@ -1832,6 +1831,7 @@ def createIndices(gdb_p: str, module_p: str, gssurgo_v: str) -> bool:
                     un_b = "NON_UNIQUE"
                 tab_p = f"{gdb_p}/{tab_n}"
                 arcpy.management.AddIndex(tab_p, col_n, idx_n, un_b)
+        arcpy.AddMessage('\n\tCreated Indices')
         return True
     except arcpy.ExecuteError:
         func = sys._getframe().f_code.co_name
