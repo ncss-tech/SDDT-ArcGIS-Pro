@@ -8,12 +8,15 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 12/04/2024
+@modified 11/18/2025
     @by: Alexnder Stum
-@version: 0.4
+@version: 0.5
 
+# --- 11/18/2025
+- Added createRelationships function to build FGDB Relationship Classes 
+for valu1 and DominantComponent tables
 # ---
-Updated 12/04/2024; v 0.4
+Updated 12/04/2024; v 0.
 - Made path reference to Valu1 table explicit
 # ---
 Updated 10/04/2024; v 0.3
@@ -117,6 +120,84 @@ def getVersion(tabs_d) -> str:
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return ''
+    
+
+def createRelationships(gdb_p: str, ltab: str):
+    """Create FGDB Relationship classes between valu1 and DominantComponent
+    tables
+
+    Parameters
+    ----------
+    gdb_p : str
+        The path to the newly created gSSURGO FGDB
+    ltab : str
+        The table for which relationships are being created: 
+        valu1 or DominantComponent
+
+    """
+    try:
+        rtabs = ['MUPOLYGON', 'MULINE', 'MUPOINT', 'mapunit']
+        lcol = 'mukey'
+        
+        for rtab in rtabs:
+            if rtab == 'mapunit':
+                rcol = 'mukey'
+                rel = 'ONE_TO_ONE'
+            else:
+                rcol = 'MUKEY'
+                rel = "ONE_TO_MANY"
+                    
+            rel_n = f"z_{ltab.lower()}_{rtab.lower()}"
+            # create Forward Label i.e. "> Horizon AASHTO Table"
+            fwdLabel = f"on {lcol}"
+            # create Backward Label i.e. "< Horizon Table"
+            backLabel = f"on {rcol}"
+            arcpy.SetProgressorLabel(
+                "Creating table relationship "
+                f"between {ltab} and {rtab}"
+            )
+            arcpy.management.CreateRelationshipClass(
+                f"{gdb_p}/{ltab}", f"{gdb_p}/{rtab}", rel_n,
+                "SIMPLE", fwdLabel, backLabel, "NONE",
+                rel, "NONE", lcol, rcol
+            )
+        if ltab == 'DominantComponent':
+            rtab = 'component'
+            rcol = 'cokey'
+            lcol = 'cokey'
+            rel = 'ONE_TO_ONE'
+            rel_n = f"z_{ltab.lower()}_{rtab.lower()}"
+            # create Forward Label i.e. "> Horizon AASHTO Table"
+            fwdLabel = f"on {lcol}"
+            # create Backward Label i.e. "< Horizon Table"
+            backLabel = f"on {rcol}"
+            arcpy.SetProgressorLabel(
+                "Creating table relationship "
+                f"between {ltab} and {rtab}"
+            )
+            arcpy.management.CreateRelationshipClass(
+                f"{gdb_p}/{ltab}", f"{gdb_p}/{rtab}", rel_n,
+                "SIMPLE", fwdLabel, backLabel, "NONE",
+                rel, "NONE", lcol, rcol
+            )
+        arcpy.AddMessage(f"\tRelationship classes created for {ltab}")
+
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddWarning(
+            "Non-critical failure creating relationship between "
+            f"{ltab} and {rtab}"
+        )
+        arcpy.AddWarning(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddWarning(
+            "Non-critical failure creating relationship between "
+            f"{ltab} and {rtab}"
+        )
+        arcpy.AddWarning(pyErr(func))
+        return False
 
 
 def nanSum(base_arr: Nx2, i_arr: Nx2):
@@ -424,7 +505,6 @@ def horzByLayer(
 
 
 def horzAg(
-
         cokey: Key, d_ranges: tuple[tuple[float, float],],
         chors: Iterator[list[
             Key, str, float, float, int, int, int, float, float, float,
@@ -448,10 +528,10 @@ def horzAg(
         A sequence of depth pairs (top and bottom depths) of each soil depth 
         layer for which soil properties will be aggregated. [cm]
     chors : Iterator[list[ 
-        Key, str, float, float, int, int, int, float, float, float, float, float
+        Key, Key, str, float, float, int, int, int, float, float, float, float, float
     ]]
         The soil properties retrieved from search cursor of component horizon:
-        chkey, desgnmaster, hzdept_r [cm], hzdepb_r [cm], sandtotal_r [pct],
+        cokey, chkey, desgnmaster, hzdept_r [cm], hzdepb_r [cm], sandtotal_r [pct],
         silttotal_r [% volume], claytotal_r [% volume], om_r [% volume], 
         dbthirdbar_r [g/cm^3], ec_r [ds/m], ph1to1h2o_r [pH], awc_r [% volume]
     cor1_depth : dict[Key, float]
@@ -1128,6 +1208,10 @@ def batch(gdb_p, module_p):
                 mk, (ck, pct) = dom_com_its
                 iCur.insertRow([mk, ck, pct])
 
+        # Create Relationships
+        createRelationships(gdb_p, 'valu1')
+        createRelationships(gdb_p, 'DominantComponent')
+
         return True
 
     except arcpy.ExecuteError:
@@ -1140,6 +1224,8 @@ def batch(gdb_p, module_p):
         return False
 
 def main(args):
+    v = '0.5'
+    arcpy.AddMessage(f"\tversion: {v}")
     gdbs = args[0]
     module_p = args[1]
     
