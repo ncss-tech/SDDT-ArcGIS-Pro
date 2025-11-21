@@ -10,10 +10,16 @@ Rasterize SSURGO soil polgon feature to a gSSURGO raster dataset.
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 10/04/2024
+@modified 11/19/2025
     @by: Alexnder Stum
-@version: 0.3
+@version: 0.4
 
+# Updated 11/19/2025, v 0.4
+- Allow user to specify cell assignment logic: "CELL_CENTER", "MAXIMUM_AREA", 
+"MAXIMUM_COMBINED_AREA". Default is now CELL_CENTER to align with gdal used
+by SSURGO Portal.
+- Set arcpy.SetLogHistory to True to record geoprocessing step
+- Adds entries to Version table
 # ---
 Updated 10/16/2024
 - Converted workspace variable from geoprocessing object to string path
@@ -87,6 +93,47 @@ def arcpyErr(func: str) -> str:
         return msgs
     except:
         return "Error in arcpyErr method"
+    
+
+def versionTab(gdb_p: str, v: str, raster_n: str, cell_assig: str):
+    """This function populates the version table within the FGDB.
+
+    Parameters
+    ----------
+    gdb_p : str
+        The path of the newly created SSURGO file geodatabase.
+    raster_n : str
+        Name of the newly created raster
+    cell_assig : str
+        The method to determine how the cell will be assigned a value 
+        when more than one feature falls within a cell. Used by the arcpy
+        PolygonToRaster function.
+    v : str
+        Version of the rasterize_mupolygon.py script.
+
+    Returns
+    -------
+
+    """
+    try:
+        cell_assig = cell_assig.replace('_', ' ')
+        version_p = f"{gdb_p}/version"
+        iCur = arcpy.da.InsertCursor(version_p, ['type', 'name', 'version'])
+        iCur.insertRow(['Raster cell assignment', raster_n, cell_assig])
+        iCur.insertRow(['Script', f'SDDT: Create gSSURGO Raster', v])
+        del iCur
+        arcpy.Delete_management("memory")
+
+        return
+    
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddWarning(arcpyErr(func))
+        return
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddWarning(pyErr(func))
+        return
 
 
 def extCoord(coord: float, cell_r: float, offset=0) -> float:
@@ -393,8 +440,8 @@ def updateMetadata(
 
 
 def rasterize(
-        wksp: str, mu_n: str, resolution: int, external: bool,
-        script_p: str
+        wksp: str, mu_n: str, resolution: int, external: bool, cell_assig: str,
+        script_p: str, v: str
         ) -> bool:
     """Primary function that creates the new gSSURGO raster
 
@@ -411,8 +458,22 @@ def rasterize(
     external : bool
         For file geodatabases, the gSSRUGO raster can be saved as a 
         tif outside of the geodatabase.
+    cell_assig : str
+        The method to determine how the cell will be assigned a value 
+        when more than one feature falls within a cell. Used by the arcpy
+        PolygonToRaster function.
+        CELL_CENTER—The polygon that overlaps the center of the cell yields 
+          the attribute to assign to the cell.
+        MAXIMUM_AREA—The single feature with the largest area within 
+          the cell yields the attribute to assign to the cell.
+        MAXIMUM_COMBINED_AREA—If there is more than one feature in a cell with 
+          the same value, the areas of these features will be combined. 
+          The combined feature with the largest area within the cell 
+          will determine the value to assign to the cell.
     script_p : str
         Path of the construct submodules where .xml templates are saved.
+    v : str
+        Version of the rasterize_mupolygon.py script.
 
     Returns
     -------
@@ -513,7 +574,7 @@ def rasterize(
             rast_p = f"{wksp}/{rast_n}"
 
         if arcpy.Exists(rast_p):
-            arcpy.Delete_management(rast_p)
+            arcpy.management.Delete(rast_p)
             if arcpy.Exists(rast_p):
                 arcpy.AddError(f"{rast_p} already exists and won't delete.")
 
@@ -523,13 +584,13 @@ def rasterize(
         # Using the joined lookup table creates a raster with 
         # CellValues that are the same as MUKEY (but integer).
         arcpy.SetProgressorLabel("Creating Lookup table...")
-        arcpy.Delete_management("memory")
+        arcpy.management.Delete("memory")
         lu = "memory/Lookup"
         if arcpy.Exists(lu):
-            arcpy.Delete_management(lu)
-        arcpy.CreateTable_management("memory", "Lookup")
-        arcpy.AddField_management(lu, "CELLVALUE", "LONG")
-        arcpy.AddField_management(lu, "MUKEY", "TEXT", "#", "#", "30")
+            arcpy.management.Delete(lu)
+        arcpy.management.CreateTable("memory", "Lookup")
+        arcpy.management.AddField(lu, "CELLVALUE", "LONG")
+        arcpy.management.AddField(lu, "MUKEY", "TEXT", "#", "#", "30")
 
         # Create a list of map unit keys present in the 
         # MUPOLYGON featureclass
@@ -548,32 +609,37 @@ def rasterize(
                 iCur.insertRow([mukey, str(mukey)])
         # Add MUKEY attribute index to Lookup table
         mu_lyr = "poly_tmp"
-        arcpy.MakeFeatureLayer_management (mu_p, mu_lyr)
+        arcpy.management.MakeFeatureLayer(mu_p, mu_lyr)
         # get MUKEY field data type
         mu_type = [f.type for f in mu_d.fields if f.name == 'MUKEY'][0]
         if mu_type == 'String':
-            arcpy.AddJoin_management (mu_lyr, "MUKEY", lu, "MUKEY", "KEEP_ALL")
+            arcpy.management.AddJoin(mu_lyr, "MUKEY", lu, "MUKEY", "KEEP_ALL")
         else:
-            arcpy.AddJoin_management (
+            arcpy.management.AddJoin(
                 mu_lyr, "MUKEY", lu, "CELLVALUE", "KEEP_ALL"
             )
         arcpy.SetProgressor("default", "Running PolygonToRaster conversion...")
-
-        arcpy.PolygonToRaster_conversion(
+        arcpy.conversion.PolygonToRaster(
             mu_lyr, "Lookup.CELLVALUE", rast_p,
-            "MAXIMUM_COMBINED_AREA", "#", cell_r
-        )
+            cell_assig, "#", cell_r
+        ) #"MAXIMUM_COMBINED_AREA"
         
-        arcpy.Delete_management(mu_lyr)
-        arcpy.Delete_management("memory")
+        arcpy.management.Delete(mu_lyr)
+        arcpy.management.Delete("memory")
         arcpy.AddMessage("\tRaster completed")
 
         # Add MUKEY field to raster
-        arcpy.AddField_management(rast_p, "MUKEY", "TEXT", "#", "#", "30")
+        arcpy.management.AddField(rast_p, "MUKEY", "TEXT", "#", "#", "30")
         with arcpy.da.UpdateCursor(rast_p, ["VALUE", "MUKEY"]) as uCur:
             for rec in uCur:
                 rec[1] = rec[0]
                 uCur.updateRow(rec)
+        
+        # Update version table
+        try:
+            versionTab(wksp, v, rast_n, cell_assig)
+        except:
+            arcpy.AddWarning("Failed to update version table")
 
         # Build pyramids and statistics
         if arcpy.Exists(rast_p):
@@ -581,18 +647,18 @@ def rasterize(
                 "default", "Calculating raster statistics..."
             )
             with arcpy.EnvManager(parallelProcessingFactor="1"):
-                arcpy.CalculateStatistics_management(
+                arcpy.management.CalculateStatistics(
                     rast_p, 1, 1, "", "OVERWRITE")
 
             arcpy.SetProgressor("default", "Building pyramids...")
             env.pyramid = "PYRAMIDS -1 NEAREST"
-            arcpy.BuildPyramids_management(
+            arcpy.management.BuildPyramids(
                 rast_p, "-1", "NONE", "NEAREST", "DEFAULT", "",
                 "SKIP_EXISTING"
             )
 
             # Add attribute index (MUKEY) for raster
-            arcpy.AddIndex_management(rast_p, ["mukey"], "Indx_RasterMukey")
+            arcpy.management.AddIndex(rast_p, ["mukey"], "Indx_RasterMukey")
 
         else:
             arcpy.AddError(f"Creation of {rast_p} Failed")
@@ -603,7 +669,7 @@ def rasterize(
         # added to facilitate a line-join.
         arcpy.SetProgressor("default", "Looking for missing map units...")
         rast_cnt = int(
-            arcpy.GetRasterProperties_management(
+            arcpy.management.GetRasterProperties(
                 rast_p, "UNIQUEVALUECOUNT"
                 ).getOutput(0)
                 )
@@ -621,8 +687,9 @@ def rasterize(
                     "The following MUKEY values were present in the "
                     "original MUPOLYGON featureclass, but not in the "
                     f"raster:\n{mu_q}\n"
-                    "Often such discrepancies are due to thin polygons "
-                    "along survey boundaries.")
+                    "Such discrepancies are a natural consequence of "
+                    "generalization that occurs in vector to raster conversion"
+                    " due to polygons too small to be preserved.")
 
         if wksp_d.extension == "gdb" or not external:
             # Update metadata file for the geodatabase
@@ -638,7 +705,7 @@ def rasterize(
             meta_msg = updateMetadata(
                 wksp, rast_p, survey_str, cell_str, script_p)
             arcpy.SetProgressorLabel("Compacting database...")
-            arcpy.Compact_management(wksp)
+            arcpy.management.Compact(wksp)
 
         t_delta = time.time() - ti
         if t_delta > 3600:
@@ -676,6 +743,7 @@ def main(
         mu_n: str, 
         resolution: int, 
         external: bool, 
+        cell_assig: str,
         script_p: str
         ) ->bool:
     """Generate gSSURGO raster
@@ -696,6 +764,9 @@ def main(
     external : bool
         For file geodatabases, the gSSRUGO raster can be saved as a 
         tif outside of the geodatabase
+    cell_assig : str
+        The method to determine how the cell will be assigned a value 
+        when more than one feature falls within a cell. 
     script_p : str
         Path of the construct submodules where .xml templates are saved.
 
@@ -706,15 +777,21 @@ def main(
     """
 
     try:
-        version = '0.3'
-        arcpy.AddMessage(f"Create SSURGO raster, {version = !s}")
+        v = '0.4'
+        arcpy.AddMessage(f"Create SSURGO raster, {v = !s}")
         env.overwriteOutput= True
+        arcpy.SetLogHistory(True)
+
+        cell_ops = ["CELL_CENTER", "MAXIMUM_AREA", "MAXIMUM_COMBINED_AREA"]
+        if cell_assig not in cell_ops:
+            cell_assig = "CELL_CENTER"
+        arcpy.AddMessage(f"Cell assigment method: {cell_assig}")
 
         bad_apples = []
         for wksp_p in wksp_l:
             wksp_p = f"{wksp_p}"
             conversion_b = rasterize(
-                wksp_p, mu_n, resolution, external, script_p
+                wksp_p, mu_n, resolution, external, cell_assig, script_p, v
             )
             if not conversion_b:
                 bad_apples.append(wksp_p)
@@ -731,6 +808,7 @@ def main(
                 "The following datasets didn't successfully process: "
                 f"{apples} \nSee specific error messages above"
             )
+        arcpy.SetLogHistory(False)
 
     except arcpy.ExecuteError:
         func = sys._getframe().f_code.co_name
