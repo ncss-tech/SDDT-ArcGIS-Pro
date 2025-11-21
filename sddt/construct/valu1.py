@@ -8,15 +8,17 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 11/18/2025
+@modified 11/20/2025
     @by: Alexnder Stum
-@version: 0.5
+@version: 0.5.1
 
-# --- 11/18/2025
+# --- 11/20/2025, v 0.5.1
+- Added versionTab function to populate Version table
+# --- 11/18/2025, v 0.5
 - Added createRelationships function to build FGDB Relationship Classes 
 for valu1 and DominantComponent tables
 # ---
-Updated 12/04/2024; v 0.
+Updated 12/04/2024; v 0.4
 - Made path reference to Valu1 table explicit
 # ---
 Updated 10/04/2024; v 0.3
@@ -102,6 +104,41 @@ def arcpyErr(func: str) -> str:
         return msgs
     except:
         return "Error in arcpyErr method"
+
+
+def versionTab(gdb_p: str, v: str):
+    """This function populates the version table within the FGDB.
+
+    Parameters
+    ----------
+    gdb_p : str
+        The path of the newly created SSURGO file geodatabase.
+    v : str
+        Version of the rasterize_mupolygon.py script.
+
+    Returns
+    -------
+
+    """
+    try:
+        version_p = f"{gdb_p}/version"
+        iCur = arcpy.da.InsertCursor(version_p, ['type', 'name', 'version'])
+        iCur.insertRow(
+            ['Script', f'SDDT: Create Valu1 and Dominant Component tables', v]
+        )
+        del iCur
+        arcpy.Delete_management("memory")
+
+        return True
+    
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        return False
 
 
 def getVersion(tabs_d) -> str:
@@ -912,7 +949,24 @@ def compAg(
         return () # msg + f"{nccpi_d[cokey]=}; {cokey=}"
 
 
-def batch(gdb_p, module_p):
+def batch(gdb_p, module_p, v) -> bool:
+    """This fuction builds the valu1 and DominantComponent tables for each
+    gSSURGO FGDB it is sent.
+
+    Parameters
+    ----------
+    gdb_p : str
+        Path of the gSSURGO FGDB
+    module_p : str
+        Path of the script enable to reference .xml templates for tables
+    v : str
+        Script version to populate Version table
+
+    Returns
+    -------
+    bool
+        True if tables were successfully created, False otherwise
+    """
     try:
         d_ranges = (
             (0,5), (5, 20), (20, 50), (50, 100), (100, 150), (150, 999),
@@ -1212,6 +1266,9 @@ def batch(gdb_p, module_p):
         createRelationships(gdb_p, 'valu1')
         createRelationships(gdb_p, 'DominantComponent')
 
+        # Populate Version table
+        versionTab(gdb_p, v)
+
         return True
 
     except arcpy.ExecuteError:
@@ -1224,19 +1281,19 @@ def batch(gdb_p, module_p):
         return False
 
 def main(args):
-    v = '0.5'
+    v = '0.5.1'
     arcpy.AddMessage(f"\tversion: {v}")
     gdbs = args[0]
     module_p = args[1]
     
     if type(gdbs) == str:
         gdb_p = gdbs
-        return batch(gdb_p, module_p)
-    else:
+        return batch(gdb_p, module_p, v)
+    else: # list, tuple, set
         for gdb in gdbs:
             d = arcpy.Describe(gdb)
             gdb_p = d.catalogPath
-            batch(gdb_p, module_p)
+            batch(gdb_p, module_p, v)
 
 
 if __name__ == '__main__':
