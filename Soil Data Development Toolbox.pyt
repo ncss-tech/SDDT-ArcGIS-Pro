@@ -15,9 +15,20 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 8/18/2025
+@modified 11/18/2025
     @by: Alexnder Stum
-@version 0.7
+@version 0.7.3
+
+# --- Updated 11/19/2025, v 0.7.3
+- Added Cell assignment type parameter to the Create gSSURGO Raster tool
+# ---
+- Added a single part geometry parameter to the Create SSURGO File Geodatabase
+tool
+# --- 
+Updated 09/23/2025
+- When layer selected in Summarize Soil Informaiton tool, it uses path not 
+layer name 
+- If string, only Uniquevalues
 """
 
 
@@ -36,7 +47,7 @@ from operator import itemgetter as iget
 
 from arcpy.da import SearchCursor
 
-version = "0.7"
+version = "0.7.3"
 
 
 def pyErr(func: str) -> str:
@@ -792,7 +803,7 @@ class buildFGDB(object):
 
         # parameter 14
         params.append(arcpy.Parameter(
-            displayName="Concise gSSURGO",
+            displayName="Concise cointerp table (recommended)",
             name="concise_b",
             direction="Input",
             parameterType="Required",
@@ -802,6 +813,17 @@ class buildFGDB(object):
         params[14].value = True
 
         # parameter 15
+        params.append(arcpy.Parameter(
+            displayName="Single Part MUPOLYGON",
+            name="diss_b",
+            direction="Input",
+            parameterType="Required",
+            datatype="GPBoolean",
+            enabled=True
+        ))
+        params[-1].value = True
+
+        # parameter 16
         params.append(arcpy.Parameter(
             displayName="gSSURGO Version",
             name="gSSURGO_v",
@@ -984,7 +1006,7 @@ class buildFGDB(object):
         return
 
     def execute(self, params, messages):
-        arcpy.AddMessage(f"SDDT {version=}")
+        arcpy.AddMessage(f"SDDT version: {version}")
         """The source code of the tool."""
         # from sddt.download.query_download import main
         if params[1].value == 'By State(s)':
@@ -1019,8 +1041,9 @@ class buildFGDB(object):
             params[9].value, # 9: Clip boolean
             path, # 10: output path
             params[12].valueAsText, # 11: AOI
-            params[14].value, # 12: Create Concise version boolean
-            params[15].value, # 13: SSURGO version
+            params[14].value, # 12: Create Concise cointerp boolean
+            params[15].value, # 13: Single Part MUPOLYGON boolean
+            params[16].value, # 14: SSURGO version
             os.path.dirname(sddt.__file__) + "/construct" # 14: module path
         ])
         
@@ -1051,7 +1074,7 @@ class buildFGDB(object):
             nt = '\n\t'
             if (both := v_success['both']):
                 arcpy.AddMessage(
-                            "Both the Valu1 and DominantCompoent tables "
+                            "Both the Valu1 and DominantComponent tables "
                             "were successfully created for these FGDBs:\n\t"
                             f"{nt.join(both)}"
                         )
@@ -1213,6 +1236,20 @@ class rasterize(object):
             enabled=False
         ))
         params[3].value = False
+        
+    
+        # parameter 4
+        params.append(arcpy.Parameter(
+            displayName="Cell assignment type",
+            name="cell_ass",
+            direction="Input",
+            parameterType="Required",
+            datatype="String",
+            enabled=True
+        ))
+        params[-1].filter.list = ["CELL_CENTER", "MAXIMUM_AREA", 
+                                  "MAXIMUM_COMBINED_AREA"]
+        params[-1].value = "CELL_CENTER"
         return params
 
 
@@ -1285,6 +1322,7 @@ class rasterize(object):
             params[1].valueAsText,
             params[2].value,
             params[3].value,
+            params[4].valueAsText,
             os.path.dirname(sddt.__file__) + "/construct"
             ])
         
@@ -2554,8 +2592,14 @@ class aggregator(object):
 
                 # Add Soil Map
                 if(in_feat := params[0].valueAsText):
-                    in_feat = in_feat[:in_feat.index('[') -1]
-                    feat_p = f"{gdb_p}/{in_feat}"
+                    in_feat_n = in_feat[:in_feat.index('[') -1]
+                    if '[map: ' in in_feat:
+                        mi = in_feat[in_feat.index('[map: ') + 6:in_feat.index(']')]
+                        mi = int(mi)
+                        lyr = map.listLayers(in_feat_n)[mi]
+                        feat_p = lyr.dataSource
+                    else:
+                        feat_p = f"{gdb_p}/{in_feat_n}"
                     sym_fld = f"{ag_tab[0]}.{ag_tab[1]}"
 
                     # Create layer name
@@ -2584,8 +2628,8 @@ class aggregator(object):
                         add_out = map.addLayer(soil_lyr_obj2)
                         soil_lyr_obj3 = add_out[0]
                         soil_sym = soil_lyr_obj3.symbology
-                        # if float or has uom
-                        if sdv_row[1] == 'Float' or sdv_row[2]:
+                        # if float or int and has uom
+                        if sdv_row[1] == 'Float' or (sdv_row[1] == 'Integer' and sdv_row[2]):
                             soil_sym.updateRenderer("GraduatedColorsRenderer")
                             soil_sym.renderer.classificationField = sym_fld
                         else:
@@ -2642,7 +2686,7 @@ class aggregator(object):
                         # if float or has uom
                         # elif sdv_row[1] == 'Float' or sdv_row[2]:
                         #     soil_sym.updateColorizer('RasterClassifyColorizer')
-                        #     soil_sym.renderer.classificationField = sym_fld
+                        #     soil_sym.colorizer.classificationField = sym_fld
                         # # has ordinal domain
                         # elif att_col in aggregator.ordinal:
                         #     # Create domain dictionary
