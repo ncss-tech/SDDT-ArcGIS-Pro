@@ -5,3 +5,6 @@ mapunit,MUPOINT,default,One to Many,Yes,mukey,MUKEY
 mapunit,MULINE,default,One to Many,Yes,mukey,MUKEY
 mapunit,MUPOLYGON,default,One to Many,Yes,mukey,MUKEY
 legend,SAPOLYGON,default,One to Many,Yes,lkey,LKEY
+muaggatt,MUPOINT,default,One to Many,Yes,mukey,MUKEY
+muaggatt,MULINE,default,One to Many,Yes,mukey,MUKEY
+muaggatt,MUPOLYGON,default,One to Many,Yes,mukey,MUKEY
