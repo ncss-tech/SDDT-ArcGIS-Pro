@@ -9,8 +9,10 @@
     @email: alexander.stum@usda.gov
 @modified 02/05/2026
     @by: Alexnder Stum
-@Version: 0.4
+@Version: 0.4.1
 
+# --- Update 02/05/2026; v 0.4.1
+- Parsing error in constructing SQL query for component Search Cursor
 # --- Update 02/05/2026; v 0.4
 - Removed arcpyErr and pyErr functions, calling from sddt
 # --- 
@@ -53,7 +55,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.4'
+v = '0.4.1'
 
 
 import arcpy
@@ -1343,10 +1345,10 @@ def main(args):
         comp_where2 = "comppct_r IS NOT NULL"
         if comp_cut:
             comp_where1 += f" AND comppct_r >= {comp_cut}"
-            comp_where2 = f"AND comppct_r >= {comp_cut}"
+            comp_where2 += f" AND comppct_r >= {comp_cut}"
         if major_b:
             comp_where1 += " AND majcompflag = 'Yes'"
-            comp_where2 = "AND majcompflag = 'Yes'"
+            comp_where2 += " AND majcompflag = 'Yes'"
         if prim_constraint and table == 'component':
             comp_where1 += f" AND {att_col} {prim_str}"
         if sec_table == 'component':
