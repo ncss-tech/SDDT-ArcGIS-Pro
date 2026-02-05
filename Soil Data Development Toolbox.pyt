@@ -15,10 +15,13 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 11/18/2025
+@modified 02/05/2026
     @by: Alexnder Stum
-@version 0.7.3
+@version 0.8
 
+# --- Updated 11/19/2025, v 0.8
+- Removed pyErr function, calling from sddt
+- Cleaned up aggregator call
 # --- Updated 11/19/2025, v 0.7.3
 - Added Cell assignment type parameter to the Create gSSURGO Raster tool
 # ---
@@ -30,50 +33,24 @@ Updated 09/23/2025
 layer name 
 - If string, only Uniquevalues
 """
-
+version = "0.8"
 
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 import arcpy
 import json
 import os
 import re
-import sys
-import traceback
+# import sys
+# import traceback
 
 from urllib.request import urlopen
 from importlib import reload
 from itertools import groupby
-from operator import itemgetter as iget
+# from operator import itemgetter as iget
 
 from arcpy.da import SearchCursor
 
-version = "0.7.3"
-
-
-def pyErr(func: str) -> str:
-    """When a python exception is raised, this funciton formats the traceback
-    message.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the python error exception
-
-    Returns
-    -------
-    str
-        Formatted python error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        
-        tbinfo = traceback.format_tb(tb)[0]
-        tbinfo = '\t\n'.join(tbinfo.split(','))
-        msgs = (f"PYTHON ERRORS:\nIn function: {func}"
-                f"\nTraceback info:\n{tbinfo}\nError Info:\n\t{exc}")
-        return msgs
-    except:
-        return "Error in pyErr method"
+from sddt import pyErr
     
 
 def byKey(x, i: int=0):
@@ -1334,6 +1311,89 @@ class rasterize(object):
         return
     
 
+class excise(object):
+    def __init__(self):
+        """Define the tool (tool name is the name of the class)."""
+        self.label = "Subset gSSURGO database"
+        self.description = ("Removes map units and attendant parent/child "
+                            "tables from gSSURGO database.")
+        self.category = '2) Construct Databases'
+
+    def getParameterInfo(self):
+        """Define parameter definitions"""
+        # parameter 0
+        params= [arcpy.Parameter(
+            displayName="Input SSURGO FGDB to be subset",
+            name="input_gSSURGO",
+            direction="Input",
+            parameterType="Required",
+            datatype="DEWorkspace"
+        )]
+
+        # parameter 1
+        params.append(arcpy.Parameter(
+            displayName="Subset MUPOLYGON feature",
+            name="mu_lyr",
+            direction="Input",
+            parameterType="Required",
+            datatype="GPFeatureLayer",
+        ))
+        params[-1].filter.list = ['Polygon']
+
+        # parameter 2
+        params.append(arcpy.Parameter(
+            displayName="Clipping Feature",
+            name="mu_lyr",
+            direction="Input",
+            parameterType="Optional",
+            datatype="GPFeatureLayer",
+        ))
+        params[-1].filter.list = ['Polygon']
+
+        # parameter 3
+        params.append(arcpy.Parameter(
+            displayName="Rebuild MURASTER?",
+            name="rebuild",
+            direction="Input",
+            parameterType="Required",
+            datatype="GPBoolean",
+        ))
+        params[-1].value = True
+        return params
+
+    def updateParameters(self, params):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+        return
+    
+    def updateMessages(self, params):
+        """Modify the messages created by internal validation for each tool
+        parameter.  This method is called after internal validation."""
+        return
+    
+    def execute(self, params, messages):
+        """The source code of the tool."""
+        arcpy.AddMessage(f"SDDT {version=}")
+        # from sddt.download.query_download import main
+        import sddt.construct.excise
+        reload(sddt.construct.excise)
+        wksp_l = [wksp for wksp in params[0].values]
+        sddt.construct.excise.main(*[
+            params[1].valueAsText,
+            params[2].value,
+            params[3].value,
+            params[4].value,
+            ])
+        
+        return
+
+    def postExecute(self, parameters):
+        """This method takes place after outputs are processed and
+        added to the display."""
+        return
+    
+
 class aggregator(object):
     tabs = {
         'Component': 'component', 'Horizon': 'chorizon', 
@@ -2580,6 +2640,7 @@ class aggregator(object):
         ])
         # Add table to map
         try:
+            arcpy.AddMessage(f"{ag_tab=}")
             if ag_tab:
                 gdb_p = params[1].valueAsText
                 output = f"{gdb_p}\\{ag_tab[0]}"
@@ -2589,12 +2650,14 @@ class aggregator(object):
                 # arcpy.management.MakeTableView(output, ag_tab)
                 tab_view = arcpy.mp.Table(output)
                 map.addTable(tab_view)
-
+                arcpy.AddMessage(f"Summary table has been added to map TOC")
                 # Add Soil Map
                 if(in_feat := params[0].valueAsText):
                     in_feat_n = in_feat[:in_feat.index('[') -1]
                     if '[map: ' in in_feat:
-                        mi = in_feat[in_feat.index('[map: ') + 6:in_feat.index(']')]
+                        mi = in_feat[
+                            in_feat.index('[map: ') + 6: in_feat.index(']')
+                        ]
                         mi = int(mi)
                         lyr = map.listLayers(in_feat_n)[mi]
                         feat_p = lyr.dataSource
