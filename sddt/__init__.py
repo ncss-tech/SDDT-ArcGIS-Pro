@@ -5,5 +5,7 @@ Created on Tue May  2 19:00:56 2023
 @author: Alexander.Stum
 """
 
-# import sddt.download
-# __all__ = ["download"]
+from .sddt_support import pyErr
+from .sddt_support import arcpyErr
+
+__all__ = ["pyErr", "arcpyErr"]
