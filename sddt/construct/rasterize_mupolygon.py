@@ -10,89 +10,40 @@ Rasterize SSURGO soil polgon feature to a gSSURGO raster dataset.
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 11/19/2025
+@modified 02/05/2026
     @by: Alexnder Stum
-@version: 0.4
+@version: 0.5
 
-# Updated 11/19/2025, v 0.4
+# --- Updated 11/19/2025, v 0.5
+- Removed arcpyErr and pyErr functions, calling from sddt
+# --- Updated 11/19/2025, v 0.4
 - Allow user to specify cell assignment logic: "CELL_CENTER", "MAXIMUM_AREA", 
 "MAXIMUM_COMBINED_AREA". Default is now CELL_CENTER to align with gdal used
 by SSURGO Portal.
 - Set arcpy.SetLogHistory to True to record geoprocessing step
 - Adds entries to Version table
-# ---
-Updated 10/16/2024
+# --- Updated 10/16/2024
 - Converted workspace variable from geoprocessing object to string path
-# ---
-Updated 10/02/2024
+# --- Updated 10/02/2024
 - Changed cell assignment paramter in Polygon to Raster function from 
     Cell Center to Maximum combined area to better generalize patterned
     areas
 # --- Updated 10/08/2024
 - Updated Metadata elements
 """
+v = 0.5
 
 import sys
 import platform
 import os
-import traceback
 import time
 import datetime
 import xml.etree.cElementTree as ET
 import arcpy
 from arcpy import env
 
-
-def pyErr(func: str = None) -> str:
-    """When a python exception is raised, this funciton 
-    formats the traceback message.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the python error exception
-
-    Returns
-    -------
-    str
-        Formatted python error message
-    """
-
-    try:
-        etype, exc, tb = sys.exc_info()
-        
-        tbinfo = traceback.format_tb(tb)[0]
-        tbinfo = '\t\n'.join(tbinfo.split(','))
-        msgs = (f"PYTHON ERRORS:\nIn function: {func}"
-                f"\nTraceback info:\n{tbinfo}\nError Info:\n\t{exc}")
-        return msgs
-    except:
-        return "Error in pyErr method"
-
-
-def arcpyErr(func: str) -> str:
-    """When an arcpy by exception is raised, this function formats the 
-    message returned by arcpy.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the arcpy error exception
-
-    Returns
-    -------
-    str
-        Formatted arcpy error message
-    """
-
-    try:
-        etype, exc, tb = sys.exc_info()
-        line = tb.tb_lineno
-        msgs = (f"ArcPy ERRORS:\nIn function: {func}\non line: {line}"
-                f"\n\t{arcpy.GetMessages(2)}\n")
-        return msgs
-    except:
-        return "Error in arcpyErr method"
+from .. import pyErr
+from .. import arcpyErr
     
 
 def versionTab(gdb_p: str, v: str, raster_n: str, cell_assig: str):
@@ -777,7 +728,6 @@ def main(
     """
 
     try:
-        v = '0.4'
         arcpy.AddMessage(f"Create SSURGO raster, {v = !s}")
         env.overwriteOutput= True
         arcpy.SetLogHistory(True)

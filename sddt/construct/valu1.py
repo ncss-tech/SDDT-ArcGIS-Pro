@@ -8,10 +8,15 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 11/20/2025
+@modified 02/05/2026
     @by: Alexnder Stum
-@version: 0.5.1
+@version: 0.7
 
+# --- 02/05/2026, v 0.7
+- Removed arcpyErr and pyErr functions, calling from sddt
+# --- 12/18/2025, v 0.6
+- Enabled to run on RSS datasets
+    Don't build Relationship class with MUPOLYGON
 # --- 11/20/2025, v 0.5.1
 - Added versionTab function to populate Version table
 # --- 11/18/2025, v 0.5
@@ -24,19 +29,22 @@ Updated 12/04/2024; v 0.4
 Updated 10/04/2024; v 0.3
 - Enabled it to batch
 """
+v = 0.7
 
 import arcpy
 from itertools import groupby
 import sys
-import traceback
 import numpy as np
 from typing import Any, Generic, Iterator, Sequence, TypeVar, Callable
 
+from .. import pyErr
+from .. import arcpyErr
 
 
 Shape = TypeVar("Shape", tuple, list)
 DType = TypeVar("DType")
 Key = TypeVar("Key", int, str)
+
 
 class Array(np.ndarray, Generic[Shape, DType]):
     """  
@@ -54,56 +62,6 @@ Nx2 = TypeVar("Nx2", bound=Array[tuple[int, 2], float])
 n1x2 = TypeVar("n1x2", bound=Array[tuple[1, 2], float])
 n5 = TypeVar("n5", bound=Array[tuple[5], float])
 Nx = TypeVar("Nx", bound=Array[tuple[int], float])
-
-
-def pyErr(func: str) -> str:
-    """When a python exception is raised, this funciton formats the traceback
-    message.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the python error exception
-
-    Returns
-    -------
-    str
-        Formatted python error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        
-        tbinfo = traceback.format_tb(tb)[0]
-        tbinfo = '\t\n'.join(tbinfo.split(','))
-        msgs = (f"PYTHON ERRORS:\nIn function: {func}"
-                f"\nTraceback info:\n{tbinfo}\nError Info:\n\t{exc}")
-        return msgs
-    except:
-        return "Error in pyErr method"
-
-
-def arcpyErr(func: str) -> str:
-    """When an arcpy by exception is raised, this function formats the 
-    message returned by arcpy.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the arcpy error exception
-
-    Returns
-    -------
-    str
-        Formatted arcpy error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        line = tb.tb_lineno
-        msgs = (f"ArcPy ERRORS:\nIn function: {func}\non line: {line}"
-                f"\n\t{arcpy.GetMessages(2)}\n")
-        return msgs
-    except:
-        return "Error in arcpyErr method"
 
 
 def versionTab(gdb_p: str, v: str):
@@ -173,7 +131,10 @@ def createRelationships(gdb_p: str, ltab: str):
 
     """
     try:
-        rtabs = ['MUPOLYGON', 'MULINE', 'MUPOINT', 'mapunit']
+        if arcpy.Exists(gdb_p + '/MUPOLYGON'):
+            rtabs = ['MUPOLYGON', 'MULINE', 'MUPOINT', 'mapunit']
+        else:
+            rtabs = ['mapunit',]
         lcol = 'mukey'
         
         for rtab in rtabs:
@@ -1281,7 +1242,6 @@ def batch(gdb_p, module_p, v) -> bool:
         return False
 
 def main(args):
-    v = '0.5.1'
     arcpy.AddMessage(f"\tversion: {v}")
     gdbs = args[0]
     module_p = args[1]

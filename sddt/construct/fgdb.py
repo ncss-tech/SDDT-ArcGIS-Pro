@@ -9,10 +9,13 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 11/18/2025
+@modified 02/05/2026
     @by: Alexnder Stum
-@version: 0.8.1
+@version: 0.9
 
+# --- Update 02/05/2026; v 0.9
+- Removed arcpyErr and pyErr functions, calling from sddt
+- tweaked build_parallel import with relative .
 # --- 11/18/2025; v 0.8.1
 - Added a garbage collection to importList to eliminate 
 "Workspace or data source is read only" errors
@@ -69,7 +72,7 @@ Updated 10/04/2024; v 0.3
 # --- Updated 10/08/2024
 - Updated Metadata elements
 """
-
+v = 0.9
 # Import system modules
 
 import concurrent.futures as cf
@@ -94,8 +97,11 @@ from typing import Any, Callable, TypeVar, Set
 import arcpy
 import psutil
 from arcpy import env
-import sddt.construct.build_parallel as bp
+
+from . import build_parallel as bp
 reload(bp)
+from .. import pyErr
+from .. import arcpyErr
 # from sddt.construct import build_parallel as bp
 
 Tist = TypeVar("Tist", tuple, list)
@@ -1910,7 +1916,6 @@ def createTableRelationships(gdb_p: str, gssurgo_v: str, module_p: str) -> str:
                 with open(csv_p, newline='') as csv_f:
                     csv_r = csv.reader(csv_f, delimiter=',')
                     hdr = next(csv_r)
-                    row_det_l = []
                     for ltab, rtab, _1, _2, _3, lcol, rcol in csv_r:
                         rel_n = f"z_{ltab.lower()}_{rtab.lower()}"
                         # create Forward Label i.e. "> Horizon AASHTO Table"
@@ -2529,7 +2534,6 @@ def main(args) -> bool:
     """
     # %% m
     try:
-        v = '0.8.1'
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
