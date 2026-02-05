@@ -10,10 +10,12 @@ Created on: 04/19/2023
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
 
-@modified 10/03/2023
+@modified 02/05/2026
     @by: Alexnder Stum
-@version: 0.7
+@Version: 0.8
 
+# --- Update 02/05/2026; v 0.8
+- Removed arcpyErr and pyErr functions, calling from sddt
 # ---
 Updated 10/03/2024 - Alexander Stum
 - Fixed error message for 400 Bad Request
@@ -26,7 +28,7 @@ the URL and leads to a Bad Request 400. Now it tries again with the <ST> in
 URL.
 
 """
-
+v = 0.8
 
 import concurrent.futures as cf
 import io
@@ -37,7 +39,6 @@ import os
 import shutil
 import socket
 import sys
-import traceback
 import zipfile
 from datetime import datetime
 from time import sleep
@@ -47,32 +48,9 @@ from urllib.request import urlopen
 import arcpy
 import requests
 
+from .. import pyErr
+from .. import arcpyErr
 
-def arcpyErr(func):
-    try:
-        etype, exc, tb = sys.exc_info()
-        line = tb.tb_lineno
-        msgs = (
-            f"ArcPy ERRORS:\nIn function: {func} on line: "
-            f"{line}\n{arcpy.GetMessages(2)}\n"
-        )
-        return msgs
-    except:
-        return "Error in arcpyErr method"
-
-        
-def pyErr(func):
-    try:
-        etype, exc, tb = sys.exc_info()
-      
-        tbinfo = traceback.format_tb(tb)[0]
-        msgs = (
-            "PYTHON ERRORS:\nTraceback info:\nIn function: "
-            f"{func}\n{tbinfo}\nError Info:\n{exc}"
-        )
-        return msgs
-    except:
-        return "Error in pyErr method"
      
 def removeDir(directory):
     try:
@@ -524,7 +502,6 @@ def ProcessSurvey(outputFolder, areaSym, surveyInfo, template_b, overwrite_b):
 
 def main(args):
     try:
-        v = 0.7
         arcpy.AddMessage(f"version {v}")
 
         # ---- Parameters
