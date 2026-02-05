@@ -7,8 +7,12 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@Version: 0.3.4
+@modified 02/05/2026
+    @by: Alexnder Stum
+@Version: 0.4
 
+# --- Update 02/05/2026; v 0.4
+- Removed arcpyErr and pyErr functions, calling from sddt
 # --- 
 Updated 09/23/2025; v 0.3.4
 - There are apparently components with Null % composition. Filtering those out
@@ -49,7 +53,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.3.4'
+v = '0.4'
 
 
 import arcpy
@@ -57,7 +61,7 @@ from itertools import groupby
 from operator import itemgetter as iget
 import re
 import sys
-import traceback
+
 import numpy as np
 from numpy import vectorize
 from numpy import isnan
@@ -66,10 +70,15 @@ import os
 from typing import Any, Generic, Iterator, Sequence, TypeVar, Callable, Union
 from sortedcontainers import SortedList
 
+from .. import pyErr
+from .. import arcpyErr
+
 
 Numeric = Union[int, float]
 Key = TypeVar("Key", int, str)
-
+Shape = TypeVar("Shape", tuple, list)
+DType = TypeVar("DType")
+Key = TypeVar("Key", int, str)
 
 
 def do_twice(func):
@@ -78,10 +87,6 @@ def do_twice(func):
         func(*args, **kwargs)
     return wrapper_do_twice
 
-
-Shape = TypeVar("Shape", tuple, list)
-DType = TypeVar("DType")
-Key = TypeVar("Key", int, str)
 
 class Array(np.ndarray, Generic[Shape, DType]):
     """  
@@ -99,56 +104,6 @@ Nx2 = TypeVar("Nx2", bound=Array[tuple[int, 2], float])
 n1x2 = TypeVar("n1x2", bound=Array[tuple[1, 2], float])
 n5 = TypeVar("n5", bound=Array[tuple[5], float])
 Nx = TypeVar("Nx", bound=Array[tuple[int], float])
-
-
-def pyErr(func: str) -> str:
-    """When a python exception is raised, this funciton formats the traceback
-    message.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the python error exception
-
-    Returns
-    -------
-    str
-        Formatted python error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        
-        tbinfo = traceback.format_tb(tb)[0]
-        tbinfo = '\t\n'.join(tbinfo.split(','))
-        msgs = (f"PYTHON ERRORS:\nIn function: {func}"
-                f"\nTraceback info:\n{tbinfo}\nError Info:\n\t{exc}")
-        return msgs
-    except:
-        return "Error in pyErr method"
-
-
-def arcpyErr(func: str) -> str:
-    """When an arcpy by exception is raised, this function formats the 
-    message returned by arcpy.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the arcpy error exception
-
-    Returns
-    -------
-    str
-        Formatted arcpy error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        line = tb.tb_lineno
-        msgs = (f"ArcPy ERRORS:\nIn function: {func}\non line: {line}"
-                f"\n\t{arcpy.GetMessages(2)}\n")
-        return msgs
-    except:
-        return "Error in arcpyErr method"
 
 
 def getVersion(tabs_d) -> str:
@@ -1238,6 +1193,7 @@ def main(args):
                 # get Result Column Name (resultcolumnname)
                 q = f"nasisrulename = '{att_col}'"
                 q = q.replace("''", "'")
+                #arcpy.AddMessage(q)
                 db_p = f"{gdb_p}/sdvattribute"
                 with (arcpy.da.SearchCursor(
                     db_p, "resultcolumnname", where_clause=q
@@ -1593,6 +1549,7 @@ def main(args):
             # -- Horizon lev1 aggregation
             elif lev1 == 'horizon':
                 # Call horizon aggregation
+                #arcpy.AddMessage(f"{tabs_d['chorizon1']}")
                 if prop_dtype == 'Numeric':
                     with arcpy.da.SearchCursor(**tabs_d['chorizon1']) as sCur:
                         if agg_meth == "Percent Present":
@@ -1616,6 +1573,7 @@ def main(args):
             # -- A component table property
             elif table == 'component':
                 comp_ag_d = None
+            #arcpy.AddMessage(f"{comp_ag_d.keys()}")
 
             done = comp_node(
                 agg_meth, mapunits, tabs_d, gssurgo_v, gdb_p,
