@@ -60,7 +60,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.4.2'
+v = '0.5'
 
 
 import arcpy
@@ -1621,13 +1621,13 @@ def main(args):
                                 else:
                                     comp_ag_d[ck] = [prop,]
                         elif abs_mm_b:
-                            arcpy.AddMessage(
-                                f'Finding horizon with absolute {mORm.__name__}'
-                            )
                             if agg_meth == 'Maximum':
                                 mORm = max
                             else:
                                 mORm = min
+                            arcpy.AddMessage(
+                                f'Finding horizon with absolute {mORm.__name__}'
+                            )
                             comp_ag_d = {
                                 ck: horzAbs(d_ranges, h, mORm) for ck, h  in
                                 groupby(sCur, iget(0))
