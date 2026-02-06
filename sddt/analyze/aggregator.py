@@ -9,8 +9,13 @@
     @email: alexander.stum@usda.gov
 @modified 02/05/2026
     @by: Alexnder Stum
-@Version: 0.4.1
+@Version: 0.5
 
+# --- Update 02/05/2026; v 0.5
+- compiled horizon values = 0 were not being passed to cursor and therefore
+were null
+- Add horzAbs function and enabled aggregator to determine the absolute
+    min/max value of any horizon intersecting specified depth layer
 # --- Update 02/05/2026; v 0.4.1
 - Parsing error in constructing SQL query for component Search Cursor
 # --- Update 02/05/2026; v 0.4
@@ -55,7 +60,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.4.1'
+v = '0.4.2'
 
 
 import arcpy
@@ -273,7 +278,7 @@ def topH2(H, p): return round(-log10(H), p)
 
 
 def horzAg(d_ranges: tuple[tuple[float, float],],
-           chors: Iterator[list[Key, Numeric, int, int]], pH: bool=False
+           chors: Iterator[list[Key, int, int, Numeric]], pH: bool=False
     ) -> Numeric:
     """Aggregates soil properties by soil layer depths from each 
     genetic soil horizon. It is called by horizons grouped cokey
@@ -283,7 +288,7 @@ def horzAg(d_ranges: tuple[tuple[float, float],],
     d_ranges : tuple[tuple[float, float],]
         A sequence of depth pairs (top and bottom depths) of each soil depth 
         layer for which soil properties will be aggregated. [cm]
-    chors : Iterator[list[Key, Numeric, int, int]]
+    chors : Iterator[list[Key, int, int, Numeric]]
         The component key (not used), the horizon property to be
         aggregated across all horizons that intersect the depth layer, and
         horizion depths: hzdept_r [cm], hzdepb_r [cm].
@@ -326,7 +331,55 @@ def horzAg(d_ranges: tuple[tuple[float, float],],
         arcpy.AddError(pyErr(func))
         raise
 
-    
+
+def horzAbs(d_ranges: tuple[tuple[float, float],],
+            chors: Iterator[list[Key, int, int, Numeric]], mORm: Callable
+    ) -> Numeric:
+    """Finds the absolute maximum or minimum soil properties 
+    by soil layer depths from each 
+    genetic soil horizon. It is called by horizons grouped cokey
+
+    Parameters
+    ----------
+    d_ranges : tuple[tuple[float, float],]
+        A sequence of depth pairs (top and bottom depths) of each soil depth 
+        layer for which soil properties will be aggregated. [cm]
+    chors : Iterator[list[Key, int, int, Numeric]]
+        The component key (not used), the horizon property to be
+        aggregated across all horizons that intersect the depth layer, and
+        horizion depths: hzdept_r [cm], hzdepb_r [cm].
+
+    Returns
+    -------
+    The weighted average of the property across all horizons that intersect
+    the layer
+        
+    """
+    try:
+        props = []
+        # Aggregate property for each intersecting horizon
+        for horizon in chors:
+            # unpack
+            horizon = list(horizon)
+            prop_i = horizon[-1]
+            h_depths = horizon[1:3]
+            for layer_i in d_ranges:
+                # Does horizon overlap depth layer?
+                if not isnan(horOverlap(layer_i, h_depths)):
+                    props.append(prop_i)
+                    break
+
+        return np.array([mORm(props),]) 
+    except arcpy.ExecuteError:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(arcpyErr(func))
+        return False
+    except:
+        func = sys._getframe().f_code.co_name
+        arcpy.AddError(pyErr(func))
+        raise
+
+
 def horzModal(d_ranges: tuple[tuple[float, float],],
            chors: Iterator[list[Key, str, int, int]],
     ) -> list[str]:
@@ -430,6 +483,7 @@ def horzByLayer(
 
         # Index of nan accumulated properties
         ac_nan = isnan(accum_prop[:,0])
+        # Index of nan properties in current horizon
         ai_nan = isnan(prop_ai[:,0])
         k_nan = np.logical_and(ac_nan, ai_nan)
         accum_prop[~k_nan, :] = np.nansum([accum_prop, prop_ai], 0)
@@ -495,7 +549,7 @@ def hor2comp(
         aggregated horizon property, component percentage
     """
     try:
-        return [(prop[0], pct) if (prop := comp_ag_d.get(ck)) 
+        return [(prop[0], pct) if (prop := comp_ag_d.get(ck) is not None) 
                 else ('not horizonated', pct) for _, ck, pct in comps]
     except:
             func = sys._getframe().f_code.co_name
@@ -776,7 +830,7 @@ def comp_node(
                             # transform1(hor[0]
                             (mk, ck, pct, hor[0]) 
                             for mk, ck, pct in comps
-                            if (hor := comp_ag_d.get(ck)) 
+                            if (hor := comp_ag_d.get(ck) is not None) 
                         ]
                         if comps_p:
                             # arcpy.AddMessage(f"{comps_p}")
@@ -837,7 +891,7 @@ def comp_node(
                         props = set()
                         pct = 0
                         for _, ck, c_pct in comps:
-                            if(h_props := comp_ag_d.get(ck)):
+                            if(h_props := comp_ag_d.get(ck)) is not None:
                                 props.update(h_props)
                                 pct += c_pct
                         # prop_str = ', '.join(props)
@@ -872,12 +926,14 @@ def comp_node(
                         prop_d = {}
                         for mk, ck, pct in comps:
                             # Get property data for cokey and prop not null
-                            if((prop_i := comp_ag_d.get(ck))
-                               and not isnan(prop_i[0])):
-                                if prop_d.get(prop_i[0]):
-                                    prop_d[prop_i[0]] += pct
-                                else:
-                                    prop_d[prop_i[0]] = pct
+                            if(prop_i := comp_ag_d.get(ck)) is not None:             
+                               if not isnan(prop_i[0]):
+                                    # sum compositions by unique property values
+                                    
+                                    if prop_d.get(prop_i[0]):
+                                        prop_d[prop_i[0]] += pct
+                                    else:
+                                        prop_d[prop_i[0]] = pct
                         if prop_d:
                             p_sel = m_func(prop_d.keys())
                             iCur.insertRow(
@@ -1106,7 +1162,9 @@ def main(args):
         custom_b = args[18]
         primNOT = args[19]
         secNOT = args[20]
-        module_p = args[21]
+        abs_mm_b = args[21]
+        module_p = args[22]
+        
 
         arcpy.AddMessage(f"Summarize Soil Information {v=}")
         arcpy.env.workspace = gdb_p
@@ -1266,6 +1324,8 @@ def main(args):
         interpk = None
         rulek = None
         
+        if arcpy.ListTables(f"{gdb_p}/{tab_n}"):
+            arcpy.management.Delete(f"{gdb_p}/{tab_n}")
         arcpy.management.CreateTable(gdb_p, tab_n)
         if lev1 == "interp": #fuzzy_b and agg_meth in ('Least Limiting', 'Most Limiting'): #if 
             arcpy.management.AddFields(
@@ -1551,7 +1611,6 @@ def main(args):
             # -- Horizon lev1 aggregation
             elif lev1 == 'horizon':
                 # Call horizon aggregation
-                #arcpy.AddMessage(f"{tabs_d['chorizon1']}")
                 if prop_dtype == 'Numeric':
                     with arcpy.da.SearchCursor(**tabs_d['chorizon1']) as sCur:
                         if agg_meth == "Percent Present":
@@ -1561,6 +1620,18 @@ def main(args):
                                     comp_ag_d[ck].append(prop)
                                 else:
                                     comp_ag_d[ck] = [prop,]
+                        elif abs_mm_b:
+                            arcpy.AddMessage(
+                                f'Finding horizon with absolute {mORm.__name__}'
+                            )
+                            if agg_meth == 'Maximum':
+                                mORm = max
+                            else:
+                                mORm = min
+                            comp_ag_d = {
+                                ck: horzAbs(d_ranges, h, mORm) for ck, h  in
+                                groupby(sCur, iget(0))
+                            }
                         else:
                             comp_ag_d = {
                                 ck: horzAg(d_ranges, h) for ck, h  in # ,pH
