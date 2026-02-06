@@ -17,9 +17,11 @@ level (mukey).
     @email: alexander.stum@usda.gov
 @modified 02/05/2026
     @by: Alexnder Stum
-@version 0.8
+@version 0.8.1
 
-# --- Updated 11/19/2025, v 0.8
+# --- Updated 02/05/2026, v 0.8.1
+- Added additional parameter to aggregator for absolute min/max horizon value
+# --- Updated 02/05/2026, v 0.8
 - Removed pyErr function, calling from sddt
 - Cleaned up aggregator call
 # --- Updated 11/19/2025, v 0.7.3
@@ -33,13 +35,14 @@ Updated 09/23/2025
 layer name 
 - If string, only Uniquevalues
 """
-version = "0.8"
+version = "0.8.1"
 
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 import arcpy
 import json
 import os
 import re
+import sys
 # import sys
 # import traceback
 
@@ -1532,6 +1535,7 @@ class aggregator(object):
             datatype="GPString",
         ))
         params[-1].filter.list = ["By Table"] #'Soil Data Viewer Categories', 'Soil Data Viewer List'
+        params[-1].value = "By Table"
 
         # parameter 3
         params.append(arcpy.Parameter(
@@ -1760,6 +1764,18 @@ class aggregator(object):
         params.append(arcpy.Parameter(
             displayName="Invert Secondary Constraint to NOT equal",
             name="secondaryNOT",
+            direction="Input",
+            parameterType="Optional",
+            datatype="GPBoolean",
+            enabled=False,
+            category='Optional'
+        ))
+        params[-1].value = False
+
+        # parameter 22
+        params.append(arcpy.Parameter(
+            displayName="Find absoluste Horizon Min or Max",
+            name="abs_min_max",
             direction="Input",
             parameterType="Optional",
             datatype="GPBoolean",
@@ -2081,6 +2097,7 @@ class aggregator(object):
 
     def byTable_agg(self, params):
         table_lab = params[4].value
+        tab_n = self.tabs[table_lab]
         method = params[7].value
         if method == "Dominant Component":
             # Percent cutoff not relavent
@@ -2096,7 +2113,6 @@ class aggregator(object):
             # Tiebreak relavent
             params[13].enabled = True
             # Populate domain list
-            tab_n = self.tabs[table_lab]
             att = params[5].values[0]
             col_prop = self.cols[tab_n][att]
             dom_n = col_prop[5]
@@ -2105,7 +2121,6 @@ class aggregator(object):
         else:
             params[13].enabled = False
         if method == "Percent Present":
-            tab_n = self.tabs[table_lab]
             att = params[5].values[0]
             col_prop = self.cols[tab_n][att]
             dom_n = col_prop[5]
@@ -2119,6 +2134,12 @@ class aggregator(object):
             params[6].enabled = False
             params[6].value = None
             params[20].enabled = False
+        # Horizon tables, provide option find absolute max/min value
+        if(tab_n.startswith('ch') 
+           and ((method == "Maximum") or (method == "Minimum"))):
+            params[22].enabled = True
+        else:
+            params[22].enabled = False
         if(table_lab == 'Interpretations' 
            and method in ("Least Limiting", "Most Limiting")):
             params[16].enabled = True
@@ -2413,7 +2434,11 @@ class aggregator(object):
         else: # Otherwise, shut down all subsequent options
             for i in range(2, len(params)):
                 params[i].enabled = False
-            return
+
+        ############ Temporary till SDV cats enabled ############
+        if params[2].value:
+            params[4].enabled = True
+            
 
         if (filt := params[2].value) and not params[2].hasBeenValidated:
             # params[5].filter.list = []
@@ -2584,8 +2609,10 @@ class aggregator(object):
 
         if tab_n.startswith('ch'):
             depths = params[11].value
+            abs_mm = params[22].value
         else:
             depths = None
+            abs_mm = False
         if tab_n in aggregator.above_comp:
             agg_meth = None
         else:
@@ -2634,9 +2661,10 @@ class aggregator(object):
             sdv_row, # 16: SDV attribute row
             params[19].value, # 17: Consider only Majors?
             custom_b, # 18: custom or SDV 
-            params[20].value, #Primary NOT
-            params[21].value, # Secondary NOT
-            os.path.dirname(sddt.__file__) + "/analyze", # 19: module path
+            params[20].value, # 19: Primary NOT
+            params[21].value, # 20: Secondary NOT
+            abs_mm, # 21: Absolute horizon min/max
+            os.path.dirname(sddt.__file__) + "/analyze", # 22: module path
         ])
         # Add table to map
         try:
@@ -2789,7 +2817,6 @@ class aggregator(object):
                         #     soil_lyr,
                         #     r"D:\projects\SSURGO\Drainage Class  PP.lyrx",
                         #     [['Value_Field', 'ag_component_drainagecl_PP.COMPPCT_R', 'ag_component_drainagecl_PP.COMPPCT_R'],])
-
         except:
             arcpy.AddError(pyErr('Execute'))
         return
