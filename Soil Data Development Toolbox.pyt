@@ -52,7 +52,8 @@ class Toolbox(object):
         
         
         # List of tool classes associated with this toolbox
-        self.tools = [BulkDownload, BuildFGDB, Rasterize, Valu1, Join, Aggregator]
+        self.tools = [BulkDownload, BuildFGDB, Rasterize, Valu1, Join, 
+                      Aggregator]
 
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 
@@ -1495,6 +1496,10 @@ class Aggregator(object):
                         #     soil_lyr,
                         #     r"D:\projects\SSURGO\Drainage Class  PP.lyrx",
                         #     [['Value_Field', 'ag_component_drainagecl_PP.COMPPCT_R', 'ag_component_drainagecl_PP.COMPPCT_R'],])
+            try:
+                exit()
+            except:
+                pass
         except:
             arcpy.AddError(pyErr('Execute'))
         return
