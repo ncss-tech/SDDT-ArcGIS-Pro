@@ -1,16 +1,18 @@
 #! /usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-
 @author: Alexander Stum
 @maintainer: Alexander Stum
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/05/2026
+@modified 02/10/2026
     @by: Alexnder Stum
-@Version: 0.5
+@Version: 0.6
 
+# --- Update 02/05/2026; v 0.6
+- Added a band-aid to accomodate domain values missing from SSURGO mdstatdomdet
+table. This is only applicable in Dominant Condition Tie-breaks
 # --- Update 02/05/2026; v 0.5
 - compiled horizon values = 0 were not being passed to cursor and therefore
 were null
@@ -60,7 +62,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.5'
+v = '0.6'
 
 
 import arcpy
@@ -869,6 +871,7 @@ def comp_node(
                 else:
                     for mk, comps in groupby(sCur, iget(0)):
                         comps_p2 = domain_it(comps, domain_d)
+                        # arcpy.AddMessage(f"{comps_p2}")
                         pct, prop, seq = comp_con(comps_p2, 3, vi, None)
                         iCur.insertRow([mapunits.pop(mk), mk, pct, prop, seq])
                 # Populate Null
@@ -1087,7 +1090,7 @@ def comp_con(
         # return max_pct, v_class[max_pct][vi][-1]
 
     except:
-        # arcpy.AddError(f"comps: {list(comps)}")
+        arcpy.AddError(f"comps: {list(comps)}")
         # arcpy.AddError(f"{prop_p} | {v_sel}")
         func = sys._getframe().f_code.co_name
         msg = pyErr(func)
@@ -1126,7 +1129,15 @@ def domain_it(
         for comp in comps:
             comp = list(comp)
             choice = comp[3]
-            seq = domain_d[choice]
+            seq = domain_d.get(choice)
+            # occasionally some choices are not in mdstatdomdet
+            if not seq:
+                seq = domain_d['z_max']
+                domain_d[choice] = seq
+                domain_d['z_max'] += 1
+                arcpy.AddWarning(
+                    f"{choice} mising from domain list, which could impact ties"
+                )
             comp.insert(3, seq)
             comps2.append(comp)
         return comps2
@@ -1198,6 +1209,7 @@ def main(args):
                 where_clause= f"domainname = '{dom_n}'"
             ) as sCur):
                 domain_d = dict(sCur)
+            domain_d['z_max'] = 10000
         except:
             domain_d = None
 
