@@ -72,7 +72,7 @@ Updated 10/04/2024; v 0.3
 # --- Updated 10/08/2024
 - Updated Metadata elements
 """
-v = 0.9
+v = "0.9"
 # Import system modules
 
 import concurrent.futures as cf
@@ -88,14 +88,13 @@ import re
 import sys
 import shutil
 import time
-import traceback
 import xml.etree.cElementTree as ET
 from importlib import reload
 from urllib.request import urlopen
 from typing import Any, Callable, TypeVar, Set
 
 import arcpy
-import psutil
+# import psutil
 from arcpy import env
 
 from . import build_parallel as bp
@@ -159,73 +158,7 @@ class xml:
             self.tm = 'WGS_1984_(ITRF00)_To_NAD_1983'
             self.epsg = 4326
         self.exist = os.path.isfile(self.xml)
-
-
-def pyErr(func: str) -> str:
-    """When a python exception is raised, this funciton formats the traceback
-    message.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the python error exception
-
-    Returns
-    -------
-    str
-        Formatted python error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        
-        tbinfo = traceback.format_tb(tb)[0]
-        tbinfo = '\t\n'.join(tbinfo.split(','))
-        msgs = (f"PYTHON ERRORS:\nIn function: {func}"
-                f"\nTraceback info:\n{tbinfo}\nError Info:\n\t{exc}")
-        return msgs
-    except:
-        return "Error in pyErr method"
-
-
-def arcpyErr(func: str) -> str:
-    """When an arcpy by exception is raised, this function formats the 
-    message returned by arcpy.
-
-    Parameters
-    ----------
-    func : str
-        The function that raised the arcpy error exception
-
-    Returns
-    -------
-    str
-        Formatted arcpy error message
-    """
-    try:
-        etype, exc, tb = sys.exc_info()
-        line = tb.tb_lineno
-        msgs = (f"ArcPy ERRORS:\nIn function: {func}\non line: {line}"
-                f"\n\t{arcpy.GetMessages(2)}\n")
-        return msgs
-    except:
-        return "Error in arcpyErr method"
-
-
-# def fld_length(row, tab_p, fld, fld_dict, exc):
-#     if "Field length exceeded" in exc:
-#         result = re.search(f'Field:(.*). Value', exc)
-#         fld = result.group(1)
-#         row = tuple(v or None for v in row)
-#         row_l = len(row)
-#         if fld in fld_dict:
-#             fld_dict[fld][1] = max(fld_dict[fld][1], row_l)
-#         else:
-#             # if not tab_flds:
-#             tab_flds = {f.name: f.length for f in arcpy.Describe(tab_p).fields}
-#             fld_dict[fld] = (tab_flds[fld], row_l)
-#         return row[:tab_flds[fld]]        
-
-
+    
 
 def funYield(
         fn: Callable, iterSets: Tist, #[dict[str, Any]]
@@ -2535,6 +2468,7 @@ def main(args) -> bool:
     # %% m
     try:
         arcpy.AddMessage("Create SSURGO File GDB, version: " + v)
+
         # location of SSURGO datasets containing SSURGO downloads
         input_p = args[0]
         option = args[1]
