@@ -6,10 +6,17 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/10/2026
+@modified 02/20/2026
     @by: Alexnder Stum
-@Version: 0.6
+@Version: 0.6.2
 
+# --- Update 02/20/2026; v 0.6.2
+- Filtering out cocropyld records that are Null, some crops only populated
+for irrigated and not nonirrigated and v.v. 
+- Fixed more Primary and Secondary constraint parsing errors
+- Fixed bug with cocropyld to be compaitable with comp_ag_d format
+# --- Update 02/05/2026; v 0.6.1
+- Parsing Primary and Secondary constraints with single quotes.
 # --- Update 02/05/2026; v 0.6
 - Added a band-aid to accomodate domain values missing from SSURGO mdstatdomdet
 table. This is only applicable in Dominant Condition Tie-breaks
@@ -62,7 +69,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.6'
+v = '0.6.2'
 
 
 import arcpy
@@ -815,6 +822,8 @@ def comp_node(
                         iCur.insertRow([asym, mk, None, None, None])
 
         elif ag_method == 'Weighted Average':
+            # arcpy.AddMessage(f"{comp_ag_d}")
+            arcpy.AddMessage(f"{tabs_d[comp_call]}")
             with (
                 arcpy.da.SearchCursor(**tabs_d[comp_call]) as sCur,
                 arcpy.da.InsertCursor(**tabs_d['property']) as iCur
@@ -832,7 +841,7 @@ def comp_node(
                             # transform1(hor[0]
                             (mk, ck, pct, hor[0]) 
                             for mk, ck, pct in comps
-                            if (hor := comp_ag_d.get(ck) is not None) 
+                            if (hor := comp_ag_d.get(ck)) is not None 
                         ]
                         if comps_p:
                             # arcpy.AddMessage(f"{comps_p}")
@@ -967,6 +976,7 @@ def comp_node(
         arcpy.AddError(arcpyErr(func))
         return False
     except:
+        # arcpy.AddError(f"{comps_p}")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
         return False
@@ -1394,10 +1404,13 @@ def main(args):
 
         if prim_constraint:
             atts = prim_constraint.split(';')
-            prim_str = f"""IN {primNOT} ({", ".join(atts)})"""
+            atts_delim = "', '".join(atts)
+            prim_str = f"""IN {primNOT} ('{atts_delim}')"""
         if sec_constraint:
             atts = sec_constraint.split(';')
-            sec_str = f"""IN {secNOT} ({", ".join(atts)})"""
+            atts_delim = "', '".join(atts)
+            sec_str = f"""IN {secNOT} ('{atts_delim}')"""
+            arcpy.AddMessage(f"{sec_str=}")
 
         # -- Secondary aggregation levels
         # Acquire cokeys of components that satisfy constraint
@@ -1426,9 +1439,9 @@ def main(args):
         if sec_table == 'component':
             comp_where1 += f" AND {sec_att} {sec_str}"
             comp_where2 += f" AND {sec_att} {sec_str}"
-        elif sec_table:
-            comp_where1 += f" AND {ck_str}"
-            comp_where2 += f" AND {ck_str}"
+        # elif sec_table:
+        #     comp_where1 += f" AND {ck_str}"
+        #     comp_where2 += f" AND {ck_str}"
 
         # When chorizon is primary table
         if d_ranges:
@@ -1613,12 +1626,19 @@ def main(args):
         else:
             # -- Component Crop Yield
             if table == 'cocropyld':
+                prim_constraint = prim_constraint.strip("'")
+                sec_constraint = sec_constraint.strip("'")
+                where_cl = (f"cropname = '{prim_constraint}' "
+                                f"AND yldunits = '{sec_constraint}' "
+                                f"AND {att_col} IS NOT NULL")
+                arcpy.AddMessage(f"{where_cl=}")
+                arcpy.AddMessage(f"{att_col=}")
                 with arcpy.da.SearchCursor(
-                    gdb_p + "/cocropyld", att_col,
-                    where_clause=(f"cropname = '{prim_constraint} "
-                                f"AND yldunits = {sec_constraint}")
+                    gdb_p + "/cocropyld", 
+                    ['cokey', att_col],
+                    where_clause=where_cl
                     ) as sCur:
-                    comp_ag_d = {ck: prop for ck, prop in sCur}
+                    comp_ag_d = {ck: [prop,] for ck, prop in sCur}
 
             # -- Horizon lev1 aggregation
             elif lev1 == 'horizon':
@@ -1671,7 +1691,10 @@ def main(args):
             # arcpy.management.AddIndex(f"{gdb_p}/{tab_n}", col_n, tab_n, False)
             
         if done:
+            if agg_meth == "Percent Present":
+                col_n = 'COMPPCT_R'
             # Return name of new table
+            arcpy.AddMessage(f"{tab_n}, {col_n}")
             return (tab_n, col_n)
         else:
             return None
