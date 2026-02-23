@@ -15,16 +15,24 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/06/2026
+@modified 02/20/2026
     @by: Alexnder Stum
-@version 1.0
+@version 1.1
 
+# --- Updated 02/20/2026, v 1.1
+- Aggregator: Fixed issues with symbolizing vector by join field
+- Aggregator: When user selected Component Crop Yield there were issues with it not
+resetting when a different crop was selected
+- Aggregator: Moved the adding and symbolizing of data to the 
+PostExecute function teh Aggregator class
 # --- Updated 02/06/2026, v 1.0
 - All tool Class objects have been sent to individual sub-modules within the
 tools subpackage of the sddt package.
 - Added Join tool
 
 """
+version = "1.1"
+
 from importlib import reload
 
 import sddt
@@ -58,8 +66,6 @@ class Toolbox(object):
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 
 
-version = "1.0"
-
 import re
 import os
 import inspect
@@ -74,8 +80,11 @@ from arcpy.da import SearchCursor
 from sddt import pyErr
 from sddt import byKey
 
+arcpy.env.addOutputsToMap = True
+
 
 class Aggregator(object):
+    ag_tab = ()
     tabs = {
         'Component': 'component', 'Horizon': 'chorizon', 
         'Interpretations': 'cointerp', 
@@ -1164,7 +1173,14 @@ class Aggregator(object):
         elif('Component Crop Yield' in params[4].value 
            and params[6].value and not params[6].hasBeenValidated):
             crop = params[6].values[0]
-            params[10].filter.list = list(self.crp_units[crop])
+            unit_l = list(self.crp_units[crop])
+            params[10].filter.list = unit_l
+            if len(unit_l) == 1:
+                params[10].value = unit_l[0]
+            else:
+                params[10].value = None
+
+            
         # Aggregation method selected, activate secondary constraints? 
         elif params[7].value and not params[7].hasBeenValidated:
             self.byTable_agg(params=params)
@@ -1345,9 +1361,23 @@ class Aggregator(object):
             abs_mm, # 21: Absolute horizon min/max
             os.path.dirname(inspect.getfile(sddt.analyze.aggregator)), # 22: module path
         ])
+
+        if ag_tab:
+            gdb_p = params[1].valueAsText
+            output = f"{gdb_p}\\{ag_tab[0]}"
+            arcpy.AddMessage(f"Summary table has been created: {output}")
+            Aggregator.ag_tab = ag_tab
+        
+        return
+
+    def postExecute(self, params):
+        """This method takes place after outputs are processed and
+        added to the display."""
         # Add table to map
         try:
-            arcpy.AddMessage(f"{ag_tab=}")
+            arcpy.env.addOutputsToMap = True
+            
+            ag_tab = Aggregator.ag_tab
             if ag_tab:
                 gdb_p = params[1].valueAsText
                 output = f"{gdb_p}\\{ag_tab[0]}"
@@ -1357,10 +1387,38 @@ class Aggregator(object):
                 # arcpy.management.MakeTableView(output, ag_tab)
                 tab_view = arcpy.mp.Table(output)
                 map.addTable(tab_view)
-                arcpy.AddMessage(f"Summary table has been added to map TOC")
+
                 # Add Soil Map
                 if(in_feat := params[0].valueAsText):
-                    in_feat_n = in_feat[:in_feat.index('[') -1]
+                    tab_lab = params[4].value
+                    tab_n = Aggregator.tabs[tab_lab]
+
+                    # Create layer label                    
+                    if params[2].valueAsText == "By Table":
+                        if 'Component Crop Yield' in tab_lab:
+                            if tab_lab == 'Component Crop Yield: Irrigated':
+                                att = 'Irr Yield'
+                            else:   
+                                att = 'Nirr Yield'
+                        else:
+                            att = params[5].values[-1]
+                        sdv_row = Aggregator.attributes[tab_n][att]
+                    else:
+                        att = params[5].values[-1]
+                        sdv_row = self.sdv_att[att] ## self not available
+                        tab_lab = sdv_row['attributetablename']
+
+                    if tab_n in Aggregator.above_comp:
+                        agg_meth = None
+                    else:
+                        agg_meth = params[7].value
+
+                    if tab_n.startswith('ch'):
+                        depths = params[11].value
+                    else:
+                        depths = None
+
+                    in_feat_n = in_feat[:in_feat.index('[') - 1]
                     if '[map: ' in in_feat:
                         mi = in_feat[
                             in_feat.index('[map: ') + 6: in_feat.index(']')
@@ -1381,32 +1439,37 @@ class Aggregator(object):
                         d_cat = ''
                     soil_map_n = f"{att} {d_cat} {Aggregator.agg_d[agg_meth]}"
                     dtype = arcpy.Describe(feat_p).datasetType
+
                     if dtype == 'FeatureClass':
                         soil_lyr = arcpy.management.MakeFeatureLayer(
                             feat_p, soil_map_n
                         )
                         soil_lyr_obj = soil_lyr.getOutput(0)
-                        arcpy.AddMessage('\tCreating join')
+                        
+                        arcpy.SetProgressor('Creating join')
                         join_out = arcpy.management.AddJoin(
                             in_layer_or_view=soil_lyr_obj,
                             in_field='MUKEY',
                             join_table=output,
                             join_field='MUKEY'
                         )
-                        arcpy.AddMessage('\tRendering')
-                        soil_lyr_obj2 =  join_out.getOutput(0)
-                        add_out = map.addLayer(soil_lyr_obj2)
-                        soil_lyr_obj3 = add_out[0]
-                        soil_sym = soil_lyr_obj3.symbology
-                        # if float or int and has uom
-                        if sdv_row[1] == 'Float' or (sdv_row[1] == 'Integer' and sdv_row[2]):
+                        soil_sym = soil_lyr_obj.symbology
+
+                        # # Data type of symbology field
+                        fld = arcpy.ListFields(soil_lyr_obj, sym_fld)[0]
+                        if fld.type == 'String':
+                            arcpy.SetProgressor('Applying Symbology')
+                            soil_sym.updateRenderer('UniqueValueRenderer')
+                            soil_sym.renderer.fields = [sym_fld]
+                        else:
+                            arcpy.SetProgressor('Applying Symbology')
                             soil_sym.updateRenderer("GraduatedColorsRenderer")
                             soil_sym.renderer.classificationField = sym_fld
-                        else:
-                            soil_sym.updateRenderer("UniqueValueRenderer")
-                            soil_sym.renderer.fields = [sym_fld]
-                        
-                        soil_lyr_obj3.symbology = soil_sym
+                            soil_sym.renderer.breakCount = 6
+
+                        soil_lyr_obj.symbology = soil_sym
+                        add_out = map.addLayer(soil_lyr_obj)
+
                     # Raster
                     else:
                         soil_lyr = arcpy.management.MakeRasterLayer(
@@ -1425,86 +1488,17 @@ class Aggregator(object):
 
                         # Map it
                         arcpy.AddMessage('\tRendering')
-                        soil_lyr_obj2 =  join_out.getOutput(0)
-                        add_out = map.addLayer(soil_lyr_obj2)
-                        # soil_lyr_obj3 = add_out[0]
-                        # soil_sym = soil_lyr_obj3.symbology
+                        add_out = map.addLayer(soil_lyr_obj)
 
-                        # flds = [f.name for f in 
-                        #         arcpy.Describe(soil_lyr_obj3).fields]
-                        # # import time
-                        # # arcpy.AddMessage("0")
-                        # # time.sleep(1)
-                        # # If Percent Present
-                        # if agg_meth == 'Percent Present':
-                        #     sym_fld = ag_tab[0] + '.COMPPCT_R'
-                        #     # sym_fld = 'COMPPCT_R'
-                        #     soil_sym.updateColorizer('RasterClassifyColorizer')
-                        #     soil_sym.colorizer.classificationField = sym_fld
-                        #     soil_sym.colorizer.breakCount = 6
-                        #     soil_sym.colorizer.colorRamp = aprx.listColorRamps('Distance')[0]
-                        #     brk_val = 0
-                        #     lab = '0%'
-                        #     for brk in soil_sym.colorizer.classBreaks:
-                        #         brk.upperBound = brk_val
-                        #         brk.label = lab
-                        #         lab = f"{brk_val} - {brk_val + 20}%"
-                        #         brk_val += 20
+                        # As of version 3.6 ArcGIS Pro crashes when arcpy 
+                        # methods of symbolizing a raster on a join field
+                        # are applied
+                        # soil_sym.updateColorizer('RasterClassifyColorizer')
+                        # soil_sym.colorizer.classificationField = sym_fld
+                        # soil_sym.colorizer.breakCount = 6
+                        # soil_sym.colorizer.colorRamp = aprx.listColorRamps('Distance')[0]
 
-                        #     soil_lyr_obj3.symbology = soil_sym
 
-                        # if float or has uom
-                        # elif sdv_row[1] == 'Float' or sdv_row[2]:
-                        #     soil_sym.updateColorizer('RasterClassifyColorizer')
-                        #     soil_sym.colorizer.classificationField = sym_fld
-                        # # has ordinal domain
-                        # elif att_col in aggregator.ordinal:
-                        #     # Create domain dictionary
-                        #     db_p = f"{gdb_p}/mdstattabcols"
-                        #     with (arcpy.da.SearchCursor(
-                        #         db_p, 'domainname', 
-                        #         where_clause=f"colphyname = '{att_col}'"
-                        #     ) as sCur):
-                        #         dom_n = next(sCur)[0]
-
-                        #     db_p = f"{gdb_p}/mdstatdomdet"
-                        #     with (arcpy.da.SearchCursor(
-                        #         db_p, ['choice', 'choicesequence'], 
-                        #         where_clause= f"domainname = '{dom_n}'"
-                        #     ) as sCur):
-                        #         domain_d = dict(sCur)
-
-                        # else:
-                        #     # If 
-                        #     soil_sym.updateColorizer(
-                        #         'RasterUniqueValueColorizer'
-                        #     )
-                        #     soil_sym.colorizer.field = sym_fld
-                        #     for grp in soil_sym.colorizer.groups:
-                        #         for itm in grp.items:
-                        #             arcpy.AddMessage(f"{itm}")
-                        
-                        # soil_lyr_obj3.symbology = soil_sym
-                        # Experiment 3 to symbolize on join, fail...
-                        # arcpy.AddMessage("Apply Symbology")
-                        # soil_lyr = map.listLayers('Drainage Class  PP')[0]
-                        # lyr = r"D:\projects\SSURGO\Drainage Class  PP.lyrx"
-                        # map.addDataFromPath(lyr)
-                        # lyr2 = map.listLayers('Drainage Class  PP')[0]
-                        # soil_lyr.symbology = lyr2.symbology
-                        # arcpy.management.ApplySymbologyFromLayer(
-                        #     soil_lyr,
-                        #     r"D:\projects\SSURGO\Drainage Class  PP.lyrx",
-                        #     [['Value_Field', 'ag_component_drainagecl_PP.COMPPCT_R', 'ag_component_drainagecl_PP.COMPPCT_R'],])
-            try:
-                exit()
-            except:
-                pass
         except:
             arcpy.AddError(pyErr('Execute'))
-        return
-
-    def postExecute(self, parameters):
-        """This method takes place after outputs are processed and
-        added to the display."""
         return
