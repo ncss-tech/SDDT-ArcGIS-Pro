@@ -15,10 +15,14 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/20/2026
+@modified 03/05/2026
     @by: Alexnder Stum
-@version 1.1
+@version 1.2
 
+# --- Updated 03/05/2026, v 1.2
+- Renamed Join as Merge
+- Added new tool Raster Lookup by Table as Lookup
+- Adds parent directory to sys.path
 # --- Updated 02/20/2026, v 1.1
 - Aggregator: Fixed issues with symbolizing vector by join field
 - Aggregator: When user selected Component Crop Yield there were issues with it not
@@ -31,9 +35,14 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.1"
+version = "1.2"
 
+import sys
+import os
 from importlib import reload
+
+pyt_path = os.path.abspath(__file__)
+sys.path.append(pyt_path)
 
 import sddt
 
@@ -43,10 +52,11 @@ BulkDownload = sddt.tools.Tool_BulkDownload.BulkDownload
 BuildFGDB = sddt.tools.Tool_BuildFGDB.BuildFGDB
 Rasterize = sddt.tools.Tool_Rasterize.Rasterize
 Valu1 = sddt.tools.Tool_Valu1.Valu1
+Lookup = sddt.tools.Tool_Lookup.Lookup
 # analyze
 # Aggregator = sddt.tools.Tool_Aggregator.Aggregator
 # manage
-Join = sddt.tools.Tool_Join.Join
+Merge = sddt.tools.Tool_Merge.Merge
 
 class Toolbox(object):
     def __init__(self):
@@ -60,8 +70,10 @@ class Toolbox(object):
         
         
         # List of tool classes associated with this toolbox
-        self.tools = [BulkDownload, BuildFGDB, Rasterize, Valu1, Join, 
-                      Aggregator]
+        self.tools = [BulkDownload, BuildFGDB, Rasterize, Valu1, Merge, 
+                      Aggregator, Lookup]
+        # self.tools = [BulkDownload, BuildFGDB, Rasterize, Valu1, 
+        #               Aggregator]
 
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 
