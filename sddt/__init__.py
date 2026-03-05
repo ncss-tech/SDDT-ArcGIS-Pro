@@ -21,10 +21,9 @@ from .tools.Tool_BuildFGDB import BuildFGDB
 from .tools.Tool_Valu1 import Valu1
 from .tools.Tool_Rasterize import Rasterize
 from .tools.Tool_Aggregator import Aggregator
-from .tools.Tool_Join import Join
+from .tools.Tool_Merge import Merge
+from .tools.Tool_Lookup import Lookup
 
 __all__ = ["pyErr", "arcpyErr", "byKey",
            "BulkDownload", "BuildFGDB", "Valu1", "Rasterize", "Aggregator",
-           "Join"]
-
-a = 1
+           "Merge", "Lookup"]
