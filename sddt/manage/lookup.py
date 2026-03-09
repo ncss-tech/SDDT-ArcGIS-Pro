@@ -32,10 +32,13 @@ hassles.
     @email: alexander.stum@usda.gov
 @modified 02/27/2026
     @by: Alexnder Stum
-@Version: 0.1
+@Version: 0.1.1
+
+# --- Update 02/20/2026; v 0.1.1
+- Fixed bug reading gpkg lookup table. The read_gpkg wasn't set up correctly.
 
 """
-v = 0.1
+v = '0.1.1'
 
 import csv
 import os
@@ -541,7 +544,7 @@ def read_tab(
 
     Parameters
     ----------
-    tbl_p : Layer
+    lyr : Layer
         OGR Layer object
     mk_f : str
         The key field or the field that corresponds to pixel values within
@@ -598,7 +601,9 @@ def read_tab(
         raise
 
 
-def read_gpkg(db_p: str, prop_f: str, prnt_e: Callable, sort_f: str = ''):
+def read_gpkg(
+        db_p: str, tab_n: str, prop_f: str, prnt_e: Callable, sort_f: str = ''
+    ):
     """Reads the lookup table, where the table is within
     an SQLite geopackage. 
      The `mk_f` and `prop_f` fields are required. The `sort_f` can be 
@@ -606,8 +611,10 @@ def read_gpkg(db_p: str, prop_f: str, prnt_e: Callable, sort_f: str = ''):
 
     Parameters
     ----------
-    tbl_p : Layer
-        OGR Layer object
+    db_p : str
+        Path to the SQLLite database
+    tab_n : str
+        Name of the lookup table
     mk_f : str
         The key field or the field that corresponds to pixel values within
         the source raster that is to be reclassified. This field should be
@@ -718,8 +725,8 @@ def main(
         with the output nodata value. If "None" is specified these pixels will
         receive the `null_id` if specified otherwise an arbitrary index value, 
         each will have the with the class text of 'None'. 
-        Note: That any input raster values not found in the lookup table will always
-        be reclassified with the output nodata value. by default "NoData"
+        Note: That any input raster values not found in the lookup table will 
+        always be reclassified with the output nodata value.
         Note: This option is only applied if the `prop_f` column is integer 
         or string
     null_id : Optional[int], optional
@@ -805,7 +812,7 @@ def main(
         elif db_ext in ['.gpkg', '.sqlite']:
             prnt('Reading SQLite table')
             reclass_d, sort_d, nominal_b = read_gpkg(
-                lyr, mk_f, prop_f, prnt_e, sort_f
+                db_p, tab_n, prop_f, prnt_e, sort_f
             )
         else:
             # prnt(f"{db_ext=}, {tab_ext=}, {tbl_p=}, {rast_o}")
@@ -1047,7 +1054,7 @@ def main(
             except:
                 pass
   
-        prnt(f"Reclassified raster in {timeit.time.time() - ti:.1} seconds")
+        prnt(f"Reclassified raster in {timeit.time.time() - ti:.1f} seconds")
 
         # Flush and close datasets
         out_band.FlushCache()
