@@ -30,15 +30,19 @@ hassles.
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/27/2026
+@modified 03/10/2026
     @by: Alexnder Stum
-@Version: 0.1.1
+@Version: 0.1.2
 
-# --- Update 02/20/2026; v 0.1.1
+# --- Update 03/09/2026; v 0.1.2
+- typo in read_gpkg lstrip "main." not ".main"
+- when gpkg featues are added from ArcGIS Pro ToC it adds a '%' prefix, 
+added lstrip to remove.
+# --- Update 03/09/2026; v 0.1.1
 - Fixed bug reading gpkg lookup table. The read_gpkg wasn't set up correctly.
 
 """
-v = '0.1.1'
+v = '0.1.2'
 
 import csv
 import os
@@ -648,7 +652,8 @@ def read_gpkg(
     """
     try:
         db = ogr.Open(db_p)
-        tab_n = tab_n.lstrip('.main')
+        tab_n = tab_n.lstrip('main.')
+        tab_n = tab_n.lstrip('%')
         lyr = db.GetLayerByName(tab_n)
         sort_d = {}
         if sort_f:
