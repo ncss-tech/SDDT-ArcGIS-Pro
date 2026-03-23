@@ -17,8 +17,11 @@ level (mukey).
     @email: alexander.stum@usda.gov
 @modified 03/23/2026
     @by: Alexnder Stum
-@version 1.3.1
+@version 1.3.2
 
+# --- Updated 3/20/2026, v 1.3.2
+- If a new DB is selected and interps was selected, flush out interps as 
+interps can be DB specific.
 # --- Updated 3/20/2026, v 1.3.1
 - Tweeked to fix deadend if user selected another DB
 # --- Updated 3/20/2026, v 1.3
@@ -40,7 +43,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.3.1"
+version = "1.3.2"
 
 import sys
 import os
@@ -144,11 +147,15 @@ class Aggregator(object):
 
     def param_updater(self, params, params_d):
         # params_d: param id: [enabled, value, values, filter list]
-        
+        if 'INTERP_OFF' in params_d:
+            if params[4].value == 'Interpretations':
+                params_d['ALL_OFF'] = 5
+            params_d.pop('INTERP_OFF')
         if 'ALL_OFF' in params_d:
             for i in range(params_d['ALL_OFF'], len(params)):
                 params[i].enabled = False
             params_d.pop('ALL_OFF')
+
         if not params_d:
             return
         for i, param_settings in params_d.items():
@@ -248,6 +255,9 @@ class Aggregator(object):
             # is it in a gSSURGO FGDB
             if not Aggregator.param_indb.is_ssurgo:
                 params[0].value = None
+                # params[1].value = None
+            params_d = Aggregator.param_filter.update("By Table")
+            self.param_updater(params, params_d)
             
         # User just blanked db reset ToC layers
         if not params[0].value and not params[0].hasBeenValidated:
