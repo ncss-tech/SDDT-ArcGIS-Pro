@@ -56,7 +56,7 @@ class Param_Filter():
             if filt != self.filt:
                 self.filt = filt
             if self.filt == "By Table":
-                params_d = {'ALL_OFF': 5}
+                params_d = {'INTERP_OFF': 0}
                 params_d[2] = [True, "By Table", '*', ["By Table"]]
                 params_d[4] = [True, None, '*', '*']
                 return params_d
