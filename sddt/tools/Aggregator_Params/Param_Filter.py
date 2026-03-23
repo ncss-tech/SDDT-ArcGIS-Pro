@@ -16,10 +16,14 @@ categories
     @email: alexander.stum@usda.gov
 @modified 03/23/2026
     @by: Alexnder Stum
-@version 1.1
+@version 1.1.1
 
+# --- Update, v. 1.1.1
+- Added 'INTERP_OFF' option 
+If a new DB is selected and interps was selected, flush out interps as 
+interps can be DB specific.
 # --- Update, v. 1.1
-- Tweeked to fix deadend if user selected another DB
+- Tweaked to fix dead end if user selected another DB
 
 
 """
