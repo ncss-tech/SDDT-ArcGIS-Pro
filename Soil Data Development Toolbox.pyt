@@ -15,10 +15,12 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/20/2026
+@modified 03/23/2026
     @by: Alexnder Stum
-@version 1.3
+@version 1.3.1
 
+# --- Updated 3/20/2026, v 1.3.1
+- Tweeked to fix deadend if user selected another DB
 # --- Updated 3/20/2026, v 1.3
 - Modulated the Aggregator tool into collection of custom class objects for 
 each parameter that requires any specialized methods.
@@ -28,8 +30,8 @@ each parameter that requires any specialized methods.
 - Adds parent directory to sys.path
 # --- Updated 02/20/2026, v 1.1
 - Aggregator: Fixed issues with symbolizing vector by join field
-- Aggregator: When user selected Component Crop Yield there were issues with it not
-resetting when a different crop was selected
+- Aggregator: When user selected Component Crop Yield there were issues with 
+it not resetting when a different crop was selected
 - Aggregator: Moved the adding and symbolizing of data to the 
 PostExecute function teh Aggregator class
 # --- Updated 02/06/2026, v 1.0
@@ -38,7 +40,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.3"
+version = "1.3.1"
 
 import sys
 import os
@@ -246,13 +248,6 @@ class Aggregator(object):
             # is it in a gSSURGO FGDB
             if not Aggregator.param_indb.is_ssurgo:
                 params[0].value = None
-            # elif not Aggregator.attributes:
-            #     Aggregator.attributes.update(Aggregator.param_indb.cols)
-            #     params[2].enabled = True
-
-            #     ### Temp ###
-            #     params_d = Aggregator.param_filter.update("By Table")
-            #     self.param_updater(params, params_d)
             
         # User just blanked db reset ToC layers
         if not params[0].value and not params[0].hasBeenValidated:
@@ -262,34 +257,36 @@ class Aggregator(object):
             return
         
         # User just selected a layer, set db to match
-        if(not params[0].value 
-           and (lyr_sel := params[1].value) and not params[1].hasBeenValidated):
-            # Get path of select feature from ToC
-            params[0].value = os.path.dirname(self.param_infeat.paths[lyr_sel])
-            # Update filter list to reflect db
-            params[1].filter.list = Aggregator.param_indb.update(
-                params[0].valueAsText
-            )
-            # if not gSSURGO FGDB
-            if not Aggregator.param_indb.is_ssurgo:
-                params[0].value = None
-                params[1].value = None
-                return
-            # elif not Aggregator.attributes:
-            #     Aggregator.attributes.update(Aggregator.param_indb.cols)
-            # Get feature name
-            feat_p = self.param_infeat.paths.get(lyr_sel)
-            # lyr_sel = lyr_sel[lyr_sel.index(':') + 2:]
-            if feat_p:
-                feat_n = os.path.basename(feat_p)
-                params[1].value = feat_n
-            params[2].enabled = True
+        if (lyr_sel := params[1].value) and not params[1].hasBeenValidated:
+            if not params[0].value: 
+                # Get path of select feature from ToC
+                params[0].value = os.path.dirname(
+                    self.param_infeat.paths[lyr_sel]
+                )
+                # Update filter list to reflect db
+                params[1].filter.list = Aggregator.param_indb.update(
+                    params[0].valueAsText
+                )
+                # if not gSSURGO FGDB
+                if not Aggregator.param_indb.is_ssurgo:
+                    params[0].value = None
+                    params[1].value = None
+                    return
+                # Get feature name
+                feat_p = self.param_infeat.paths.get(lyr_sel)
+                # lyr_sel = lyr_sel[lyr_sel.index(':') + 2:]
+                if feat_p:
+                    feat_n = os.path.basename(feat_p)
+                    params[1].value = feat_n
+                params[2].enabled = True
+            
             ### Temp ###
             params_d = Aggregator.param_filter.update("By Table")
             self.param_updater(params, params_d)
 
         if not params[0].value:
             return
+
         #######
         # Place holder for param[2]: param_filter, for now locked as "By Table"
         # ############ Temporary till SDV cats enabled ############
@@ -532,7 +529,8 @@ class Aggregator(object):
             params[20].value, # 19: Primary NOT
             params[21].value, # 20: Secondary NOT
             abs_mm, # 21: Absolute horizon min/max
-            os.path.dirname(inspect.getfile(sddt.analyze.aggregator)), # 22: module path
+            # 22: module path
+            os.path.dirname(inspect.getfile(sddt.analyze.aggregator)), 
         ])
 
         if ag_tab:
@@ -577,7 +575,8 @@ class Aggregator(object):
                             att = Aggregator.param_primatt.att
                     else:
                         att = params[5].values[-1]
-                        sdv_row = Aggregator.param_sdvcat[att] ## self not available
+                        ## self not available
+                        sdv_row = Aggregator.param_sdvcat[att] 
                         tab_lab = sdv_row['attributetablename']
 
                     if tab_n in Aggregator.above_comp:
