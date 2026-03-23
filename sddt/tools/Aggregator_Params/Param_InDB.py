@@ -165,8 +165,8 @@ class Param_InDB():
             db_p = f"{self.path}/mdstattabcols"
             with (arcpy.da.SearchCursor(
                 db_p, 
-                ['tabphyname', 'collabel', 'colphyname', 'logicaldatatype', 'uom', 
-                'fieldsize', 'precision', 'domainname'],
+                ['tabphyname', 'collabel', 'colphyname', 'logicaldatatype', 
+                 'uom', 'fieldsize', 'precision', 'domainname'],
                 sql_clause=[None, "ORDER BY tabphyname ASC, colsequence ASC"]) 
             as sCur):
                 # dictionary of table columns
@@ -225,7 +225,7 @@ class Param_InDB():
                 })
             # self.d_pop = True
         except:
-            self.error = pyErr('Param_SecAtt')
+            self.error = pyErr('Param_InDB')
             return {}
 
 

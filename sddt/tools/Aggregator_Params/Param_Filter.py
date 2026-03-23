@@ -14,10 +14,12 @@ categories
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/10/2026
+@modified 03/23/2026
     @by: Alexnder Stum
-@version 1.0
+@version 1.1
 
+# --- Update, v. 1.1
+- Tweeked to fix deadend if user selected another DB
 
 
 """
@@ -54,8 +56,9 @@ class Param_Filter():
             if filt != self.filt:
                 self.filt = filt
             if self.filt == "By Table":
-                params_d = {i: [False, '*', '*', '*'] for i in range(5, 23)}
-                params_d[4] = [True, '*', '*', '*']
+                params_d = {'ALL_OFF': 5}
+                params_d[2] = [True, "By Table", '*', ["By Table"]]
+                params_d[4] = [True, None, '*', '*']
                 return params_d
             # elif ("Most Common Grouped (SDV Categories)" == filt
             #         or "Most Common as List (all SDV)" == filt):
