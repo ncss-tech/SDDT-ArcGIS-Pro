@@ -15,10 +15,13 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/23/2026
+@modified 03/26/2026
     @by: Alexnder Stum
-@version 1.3.2
+@version 1.4
 
+# --- Updated 3/26/2026, v 1.4
+- Revamped aggregator to include Which Components parameter, removed Absolute
+Min/Max boolean parameter and the Major boolean paramter
 # --- Updated 3/20/2026, v 1.3.2
 - If a new DB is selected and interps was selected, flush out interps as 
 interps can be DB specific.
@@ -43,7 +46,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.3.2"
+version = "1.4"
 
 import sys
 import os
@@ -111,8 +114,8 @@ arcpy.env.addOutputsToMap = True
 
 class Aggregator(object):
     # output table
-    ag_tab = ''
-    above_comp = {'mapunit', 'muaggatt'}
+    ag_out = ''
+    in_feat = ''
 
     agg_d = {
             "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
@@ -126,6 +129,7 @@ class Aggregator(object):
     param_sdvcat = Param_SDVCat()
     param_primtab = Param_PrimTab()
     param_primatt = Param_PrimAtt()
+    param_comtype = Param_ComType()
     param_primcon = Param_PrimCon()
     param_agmeth = Param_AgMeth()
     param_sectab = Param_SecTab()
@@ -172,30 +176,44 @@ class Aggregator(object):
         """Define parameter definitions"""
         # parameter 0: gSSURGO Database
         params = [Aggregator.param_indb.param]
+
         # parameter 1: gSSURGO Feature or Raster
         params.append(self.param_infeat.param)
+
         # parameter 2: Choice List Filter
         params.append(Aggregator.param_filter.param)
+
         # parameter 3: SDV Category
         params.append(Aggregator.param_sdvcat.param)
+
         # parameter 4: Primary Table
         params.append(Aggregator.param_primtab.param)
+
         # parameter 5: Primary Soil Attribute
         params.append(Aggregator.param_primatt.param)
-        # parameter 6: Primary Constraint
-        params.append(Aggregator.param_primcon.param)
+
+        # parameter 6: Which Components
+        params.append(Aggregator.param_comtype.param)
+
         # parameter 7: Aggregation Method
         params.append(Aggregator.param_agmeth.param)
-        # parameter 8: Secondary Table
+
+        # parameter 8: Primary Constraint
+        params.append(Aggregator.param_primcon.param)
+
+        # parameter 9: Secondary Table
         params.append(Aggregator.param_sectab.param)
-        # parameter 9
+
+        # parameter 10: Secondary Attribute
         params.append(Aggregator.param_secatt.param)
-        # parameter 10: Secondary Constraint
-        params.append(Param_AllOthers.param10())
-        # parameter 11: Depth Ranges
+
+        # parameter 11: Secondary Constraint
         params.append(Param_AllOthers.param11())
 
-        # parameter 12
+        # parameter 12: Depth Ranges
+        params.append(Param_AllOthers.param12())
+
+        # parameter 13
         params.append(arcpy.Parameter(
             displayName="Timespan",
             name="month1",
@@ -208,33 +226,36 @@ class Aggregator(object):
         # params[-1].filters[0].list = Aggregator.months
         # params[-1].filters[1].list = Aggregator.months
 
-        # parameter 13: Tie Break Rule
-        params.append(Param_AllOthers.param13())
-        # parameter 14: Component Percent Cutoff
+        # parameter 14: Tie Break Rule
         params.append(Param_AllOthers.param14())
-        # parameter 15: Property Range Value
+
+        # parameter 15: Component Percent Cutoff
         params.append(Param_AllOthers.param15())
-        # parameter 16: Map Interp Fuzzy Values
+
+        # parameter 16: Property Range Value
         params.append(Param_AllOthers.param16())
-        # parameter 17: Include Null Rating Values
+
+        # parameter 17: Map Interp Fuzzy Values
+        params.append(Param_AllOthers.param17())
+
+        # parameter 18: Include Null Rating Values
             # It was inactivated in ArcMap SDDT with this note: 
             # Need to validate this parameter and its relationship to p-11
             # Check this box to include NULL rating values 
             # This parameter will remain inactive and set to False
-        params.append(Param_AllOthers.param17())
-        # parameter 18: Treat Null entries as Zero
+        params.append(Param_AllOthers.param18())
+
+        # parameter 19: Treat Null entries as Zero
             # this parameter is obsolete as SDV attributes
             # interpnullsaszerooptionflag and interpnullsaszeroflag are
             # always equal. Merits further investigation
-        params.append(Param_AllOthers.param18())
-        # parameter 19: Only consider Major components
         params.append(Param_AllOthers.param19())
+
         # parameter 20: Invert Primary Constraint to NOT equal
         params.append(Param_AllOthers.param20())
+
         # parameter 21: Invert Secondary Constraint to NOT equal
         params.append(Param_AllOthers.param21())
-        # parameter 22: Find absoluste Horizon Min or Max
-        params.append(Param_AllOthers.param22())
 
         return params
 
@@ -327,15 +348,27 @@ class Aggregator(object):
                 Aggregator.param_indb.cols, Aggregator.param_indb.RV
             )
             self.param_updater(params, params_d)
+            if params[6].value:
+                params_d = Aggregator.param_comtype.update(
+                    params[6].value, params[7].filter.list, params[5].valueAsText
+                )
+                self.param_updater(params, params_d)
 
         # Component Crop Yield
         elif(params[4].value and 'Component Crop Yield' in params[4].value 
-           and params[6].value and not params[6].hasBeenValidated):
-            crop = params[6].values[0]
+           and params[8].value and not params[8].hasBeenValidated):
+            crop = params[8].values[0]
             unit_l = Aggregator.param_indb.crp_units[crop]
             params_d = Aggregator.param_primcon.update(unit_l)
             self.param_updater(params, params_d)
-            
+
+        # Component type selection
+        elif params[6].value and not params[6].hasBeenValidated:
+            params_d = Aggregator.param_comtype.update(
+                params[6].value, params[7].filter.list, params[5].valueAsText
+            )
+            self.param_updater(params, params_d)
+
         # Aggregation method selected, activate secondary constraints? 
         elif params[7].value and not params[7].hasBeenValidated:
             tab_n = Aggregator.param_primtab.tabs[tab_lab]
@@ -350,7 +383,7 @@ class Aggregator(object):
             self.param_updater(params, params_d)
 
         # A secondary table was selected
-        elif (stab_lab := params[8].value) and not params[8].hasBeenValidated:
+        elif (stab_lab := params[9].value) and not params[9].hasBeenValidated:
             stab_n = Aggregator.param_primtab.tabs[stab_lab]
             cols = Aggregator.param_indb.cols[stab_n]
             params_d = Aggregator.param_sectab.update(
@@ -359,7 +392,7 @@ class Aggregator(object):
             self.param_updater(params, params_d)
 
         # A secondary attribute selected and Component Crop Yield
-        elif (sec_att := params[9].value) and not params[9].hasBeenValidated:
+        elif (sec_att := params[10].value) and not params[10].hasBeenValidated:
             stab_n = Aggregator.param_primtab.tabs[stab_lab]
             cols = Aggregator.param_indb.cols[stab_n]
             params_d = Aggregator.param_secatt.update(
@@ -395,16 +428,18 @@ class Aggregator(object):
             params[4].setErrorMessage(err)
         if (err:= Aggregator.param_primatt.error):
             params[5].setErrorMessage(err)
-        if (err:= Aggregator.param_primcon.error):
+        if (err:= Aggregator.param_comtype.error):
             params[6].setErrorMessage(err)
         if (err:= Aggregator.param_agmeth.error):
             params[7].setErrorMessage(err)
-        if (err:= Aggregator.param_sectab.error):
+        if (err:= Aggregator.param_primcon.error):
             params[8].setErrorMessage(err)
-        if (err:= Aggregator.param_secatt.error):
+        if (err:= Aggregator.param_sectab.error):
             params[9].setErrorMessage(err)
+        if (err:= Aggregator.param_secatt.error):
+            params[10].setErrorMessage(err)
 
-        if params[5].value and not params[7].value:
+        if params[7].enabled and not params[7].value:
             params[7].setErrorMessage("An Aggregation Method must be selected")
 
         vl = params[5].values
@@ -427,16 +462,16 @@ class Aggregator(object):
                     "Select only one Primary Soil Attribute"
                 )
 
-        if params[7].value == "Percent Present" and not params[6].value:
-            params[6].setErrorMessage(
+        if params[7].value == "Percent Present" and not params[8].value:
+            params[8].setErrorMessage(
                 "A Primary Constraint required when Percent Present selected"
             )
-        if params[8].enabled and params[8].value and not params[9].value:
-            params[9].setErrorMessage(
+        if params[9].enabled and params[8].value and not params[10].value:
+            params[10].setErrorMessage(
                 "A Secondary Attribute must be specified with Secondary Table"
             )
-        if params[8].enabled and params[8].value and not params[10].value:
-            params[10].setErrorMessage(
+        if params[9].enabled and params[9].value and not params[11].value:
+            params[11].setErrorMessage(
                 "A Secondary Constraint must be specified with Secondary Table"
             )
         
@@ -449,6 +484,8 @@ class Aggregator(object):
         import sddt.analyze.aggregator
         reload(sddt.analyze.aggregator)
         # from sddt.analyze.aggregator import main as aggregator
+
+        Aggregator.join_feat = params[1].value
         
         if params[2].value == "By Table":
             tab_lab = params[4].value
@@ -462,6 +499,10 @@ class Aggregator(object):
             else:
                 att = params[5].values[-1]
             tab_n = Aggregator.param_primtab.tabs[tab_lab]
+            if not Aggregator.param_indb.cols.keys():
+                Aggregator.param_indb.update(
+                params[0].valueAsText
+            )
             sdv_row = Aggregator.param_indb.cols[tab_n][att]
             custom_b = True
             att_col = sdv_row[0]
@@ -474,7 +515,7 @@ class Aggregator(object):
 
         #Property Range lo/RV/hi
         if Aggregator.param_indb.RV.get(att):
-            if lorvhi := params[15].value:
+            if lorvhi := params[16].value:
                 if lorvhi == 'Low':
                     att_col += '_l'
                 elif lorvhi == 'High':
@@ -483,29 +524,27 @@ class Aggregator(object):
                     att_col += '_r'
 
         if tab_n.startswith('ch'):
-            depths = params[11].value
-            abs_mm = params[22].value
+            depths = params[12].value
+            # abs_mm = params[22].value
         else:
             depths = None
-            abs_mm = False
-        if tab_n in Aggregator.above_comp:
-            agg_meth = None
-        else:
-            agg_meth = params[7].value
-        if params[12].value:
-            months = params[12].value.getTrueRow(0)
+            # abs_mm = False
+
+        agg_meth = params[7].value
+        if params[13].value:
+            months = params[13].value.getTrueRow(0)
         else:
             months = None
-        if params[6].enabled:
-            prim_con = params[6].valueAsText
+        if params[8].enabled:
+            prim_con = params[8].valueAsText
         else:
             prim_con = ''
 
         # Is there Secondary constraint?
-        if params[8].enabled and params[8].value:
-            sec_tab_lab = params[8].valueAsText # 6: Secondary Table
-            sec_att_lab = params[9].valueAsText # 7: Secondary Attribute
-            sec_con = params[10].valueAsText # 8: Secondary Constratint
+        if params[9].enabled and params[9].value:
+            sec_tab_lab = params[9].valueAsText # 6: Secondary Table
+            sec_att_lab = params[10].valueAsText # 7: Secondary Attribute
+            sec_con = params[11].valueAsText # 8: Secondary Constratint
 
             sec_tab = Aggregator.param_primtab.tabs[sec_tab_lab]
             sec_sdv_row = Aggregator.param_indb.cols[sec_tab][sec_att_lab]
@@ -514,12 +553,12 @@ class Aggregator(object):
             sec_tab = None
             sec_att = None
             sec_con = None
-        
-        ag_tab = sddt.analyze.aggregator.main([
-            params[1].valueAsText, # 0: SSURGO Feature to join to
-            params[0].valueAsText, # 1: SSURGO database
-            tab_n, # 2: SSURGO source table
-            att_col, # 3: SSURGO attribute source column
+        # Tab name, column name
+        ag_out = sddt.analyze.aggregator.main([
+            params[0].valueAsText, # 0: SSURGO database
+            tab_n, # 1: SSURGO source table
+            att_col, # 2: SSURGO attribute source column
+            params[6].value, # 3: Component type
             agg_meth, # 4: Aggregation method
             prim_con, # 5: Primary Constraint
             sec_tab, # 6: Secondary Table
@@ -528,27 +567,25 @@ class Aggregator(object):
             # Change when multiple depth ranges ready
             depths, # 9: depth ranges
             months, # 10: months
-            params[13].value, # 11: Tiebreak for dominant condition
+            params[14].value, # 11: Tiebreak for dominant condition
             None, # 12: Null = 0
-            params[14].value, # 13: Component % cutoff
-            params[16].value, # 14: fuzzy map
+            params[15].value, # 13: Component % cutoff
+            params[17].value, # 14: fuzzy map
             None, # 15: Null rating
             sdv_row, # 16: SDV attribute row
-            params[19].value, # 17: Consider only Majors?
-            custom_b, # 18: custom or SDV 
-            params[20].value, # 19: Primary NOT
-            params[21].value, # 20: Secondary NOT
-            abs_mm, # 21: Absolute horizon min/max
-            # 22: module path
+            custom_b, # 17: custom or SDV 
+            params[20].value, # 18: Primary NOT
+            params[21].value, # 19: Secondary NOT
+            # 20: module path
             os.path.dirname(inspect.getfile(sddt.analyze.aggregator)), 
         ])
 
-        if ag_tab:
+        if ag_out:
             gdb_p = params[0].valueAsText
-            output = f"{gdb_p}\\{ag_tab[0]}"
+            output = f"{gdb_p}\\{ag_out[0]}"
+            Aggregator.ag_out = ag_out
             arcpy.AddMessage(f"Summary table has been created: {output}")
-            Aggregator.ag_tab = ag_tab
-        
+            
         return
 
     def postExecute(self, params):
@@ -556,23 +593,22 @@ class Aggregator(object):
         added to the display."""
         # Add table to map
         try:
-            arcpy.env.addOutputsToMap = True
-            
-            ag_tab = Aggregator.ag_tab
-            if ag_tab:
+            aprx = arcpy.mp.ArcGISProject("CURRENT")
+
+            if Aggregator.ag_out:
                 gdb_p = params[0].valueAsText
-                output = f"{gdb_p}\\{ag_tab[0]}"
-                arcpy.AddMessage(f"Summary table has been created: {output}")
+                tab_n = Aggregator.ag_out[0]
+                tab_p = os.path.normpath(f"{gdb_p}\\{tab_n}")
+                
                 aprx = arcpy.mp.ArcGISProject("CURRENT")
                 map = aprx.activeMap
-                # arcpy.management.MakeTableView(output, ag_tab)
-                tab_view = arcpy.mp.Table(output)
-                map.addTable(tab_view)
+                tab_mp = arcpy.mp.Table(tab_p)
+                map.addTable(tab_mp)
 
                 # Add Soil Map
-                if(in_feat := params[1].valueAsText):
+                if (in_feat := params[1].valueAsText):
+                    in_feat_p = f"{gdb_p}\\{in_feat}"
                     tab_lab = params[4].value
-                    tab_n = Aggregator.param_primtab.tabs[tab_lab]
 
                     # Create layer label                    
                     if params[2].valueAsText == "By Table":
@@ -589,27 +625,13 @@ class Aggregator(object):
                         sdv_row = Aggregator.param_sdvcat[att] 
                         tab_lab = sdv_row['attributetablename']
 
-                    if tab_n in Aggregator.above_comp:
-                        agg_meth = None
-                    else:
-                        agg_meth = params[7].value
+                    agg_meth = params[7].value
 
                     if tab_n.startswith('ch'):
-                        depths = params[11].value
+                        depths = params[12].value
                     else:
                         depths = None
-
-                    in_feat_n = in_feat[:in_feat.index('[') - 1]
-                    if '[map: ' in in_feat:
-                        mi = in_feat[
-                            in_feat.index('[map: ') + 6: in_feat.index(']')
-                        ]
-                        mi = int(mi)
-                        lyr = map.listLayers(in_feat_n)[mi]
-                        feat_p = lyr.dataSource
-                    else:
-                        feat_p = f"{gdb_p}/{in_feat_n}"
-                    sym_fld = f"{ag_tab[0]}.{ag_tab[1]}"
+                    sym_fld = f"{Aggregator.ag_out[0]}.{Aggregator.ag_out[1]}"
 
                     # Create layer name
                     if depths:
@@ -618,12 +640,13 @@ class Aggregator(object):
                         d_cat = f"{dmin} to {dmax} cm"
                     else:
                         d_cat = ''
+                
                     soil_map_n = f"{att} {d_cat} {Aggregator.agg_d[agg_meth]}"
-                    dtype = arcpy.Describe(feat_p).datasetType
+                    dtype = arcpy.Describe(in_feat_p).datasetType
 
                     if dtype == 'FeatureClass':
                         soil_lyr = arcpy.management.MakeFeatureLayer(
-                            feat_p, soil_map_n
+                            in_feat_p, soil_map_n
                         )
                         soil_lyr_obj = soil_lyr.getOutput(0)
                         
@@ -631,7 +654,7 @@ class Aggregator(object):
                         join_out = arcpy.management.AddJoin(
                             in_layer_or_view=soil_lyr_obj,
                             in_field='MUKEY',
-                            join_table=output,
+                            join_table=tab_mp,
                             join_field='MUKEY'
                         )
                         soil_sym = soil_lyr_obj.symbology
@@ -653,34 +676,36 @@ class Aggregator(object):
 
                     # Raster
                     else:
+                        soil_map_n = in_feat + " with join"
                         soil_lyr = arcpy.management.MakeRasterLayer(
-                            feat_p, soil_map_n
+                            in_feat_p, soil_map_n
                         )
                         soil_lyr_obj = soil_lyr.getOutput(0)
 
                         # Join
-                        arcpy.AddMessage('\tCreating join')
                         join_out = arcpy.management.AddJoin(
                             in_layer_or_view=soil_lyr_obj,
                             in_field='MUKEY',
-                            join_table=output,
+                            join_table=tab_mp,
                             join_field='MUKEY'
                         )
 
-                        # Map it
-                        arcpy.AddMessage('\tRendering')
+                            # Map it
+                            # As of version 3.6 ArcGIS Pro crashes when arcpy 
+                            # methods of symbolizing a raster on a join field
+                            # are applied
+                            # soil_sym.updateColorizer('RasterClassifyColorizer')
+                            # soil_sym.colorizer.classificationField = sym_fld
+                            # soil_sym.colorizer.breakCount = 6
+                            # soil_sym.colorizer.colorRamp = aprx.listColorRamps(
+                            #     'Distance'
+                            # )[0]
+                            # sym_fld = 'ag_component_taxtempcl_DCP.seq_taxtempcl_DCP'
+
+                            # soil_lyr_obj.symbology = soil_sym
                         add_out = map.addLayer(soil_lyr_obj)
-
-                        # As of version 3.6 ArcGIS Pro crashes when arcpy 
-                        # methods of symbolizing a raster on a join field
-                        # are applied
-                        # soil_sym.updateColorizer('RasterClassifyColorizer')
-                        # soil_sym.colorizer.classificationField = sym_fld
-                        # soil_sym.colorizer.breakCount = 6
-                        # soil_sym.colorizer.colorRamp = aprx.listColorRamps(
-                        #     'Distance'
-                        # )[0]
-
         except:
-            arcpy.AddError(pyErr('Execute'))
+            pass
+            # arcpy.AddError(pyErr('postExecute'))
         return
+        
