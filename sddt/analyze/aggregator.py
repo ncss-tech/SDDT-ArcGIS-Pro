@@ -12,6 +12,9 @@
 
 # --- Update 03/26/2026; v 0.8
 - Ammended errors related to summarizing categorical horizon attributes
+- Revamped aggregator to include Which Components parameter, removed Absolute
+Min/Max boolean parameter and the Major boolean paramter
+- 
 # --- Update 03/20/2026; v 0.7
 - Fixed concatonation errors related to secondary constraints
 - Modulated the component, interp, horizon, and other functions which are 
@@ -75,7 +78,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.6.2'
+v = '0.7'
 
 
 import re
