@@ -8,8 +8,10 @@
     @email: alexander.stum@usda.gov
 @modified 03/20/2026
     @by: Alexnder Stum
-@Version: 0.7
+@Version: 0.8
 
+# --- Update 03/26/2026; v 0.8
+- Ammended errors related to summarizing categorical horizon attributes
 # --- Update 03/20/2026; v 0.7
 - Fixed concatonation errors related to secondary constraints
 - Modulated the component, interp, horizon, and other functions which are 
@@ -93,10 +95,10 @@ from .agg_commons import getVersion
 
 def main(args):
     try:
-        feat = args[0] # SSURGO Feature to join to
-        gdb_p = args[1] # SSURGO database
-        table = args[2] # SSURGO table summarized attribute sourced from
-        att_col = args[3] # The table column being summarized
+        gdb_p = args[0] # SSURGO database
+        table = args[1] # SSURGO table summarized attribute sourced from
+        att_col = args[2] # The table column being summarized
+        comtype = args[3]
         agg_meth = args[4] # Aggregation method
         prim_constraint = args[5] # criteria
         sec_table = args[6]
@@ -112,23 +114,25 @@ def main(args):
         # custom: [Column Physical Name, Logical data type, Unit of measure]
         # sdv: all SDV Attribute fields
         sdv_dict = args[16] # SDV row as dictionary
-        major_b = args[17] # args[17] # Only consider major components
-        custom_b = args[18]
-        primNOT = args[19]
-        secNOT = args[20]
-        abs_mm_b = args[21]
-        module_p = args[22]
+        custom_b = args[17]
+        primNOT = args[18]
+        secNOT = args[19]
+        module_p = args[20]
         
         arcpy.AddMessage(f"Summarize Soil Information {v=}")
         arcpy.env.workspace = gdb_p
         arcpy.env.overwriteOutput = True
+
+        if not agg_meth and comtype == 'Dominant Component':
+            agg_meth = 'Dominant Component'
 
         # Aggregation Algorithms and acronymns 
         agg_d = {
             "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
             "Minimum": 'MIN', "Maximum": 'MAX', "Weighted Average": 'WTA', 
             "Percent Present": 'PP', 'Least Limiting': 'LL', 
-            'Most Limiting': 'ML'
+            'Most Limiting': 'ML', "Absolute Minimum": "AMIN", 
+            "Absolute Maximum": "AMAX"
         }
 
         # Create domain dictionary
@@ -171,6 +175,7 @@ def main(args):
         else:
             d_ranges = None
             d_cat = ''
+
         if not custom_b:
             tab_n = f"{sdv_dict['resultcolumnname']}_{agg_d[agg_meth]}_{d_cat}"
             col_n = tab_n
@@ -322,10 +327,14 @@ def main(args):
 
         if prim_constraint:
             atts = prim_constraint.split(';')
+            # sometimes they have single quotes already and get double bagged
+            atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
             prim_str = f"""IN {primNOT} ('{atts_delim}')"""
         if sec_constraint:
             atts = sec_constraint.split(';')
+            # sometimes they have single quotes already and get double bagged
+            atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
             sec_str = f"""IN {secNOT} ('{atts_delim}')"""
             # arcpy.AddMessage(f"{sec_str=}")
@@ -349,7 +358,7 @@ def main(args):
         if comp_cut:
             comp_where1 += f" AND comppct_r >= {comp_cut}"
             comp_where2 += f" AND comppct_r >= {comp_cut}"
-        if major_b:
+        if comp_cut != "All Components":
             comp_where1 += " AND majcompflag = 'Yes'"
             comp_where2 += " AND majcompflag = 'Yes'"
         if prim_constraint and table == 'component':
@@ -365,7 +374,7 @@ def main(args):
             ch_where = "hzdept_r IS NOT NULL AND hzdepb_r IS NOT NULL"
             # Shouldn't be anything deeper...
             d_ranges = [[0, 10000],]
-        if table == 'chorizon':
+        if table == 'chorizon' and agg_meth != 'Dominant Condition':
             ch_where += f" AND {att_col} IS NOT NULL"
         if prim_constraint and table == 'chorizon':
             ch_where += f" AND {att_col} {prim_str}"
@@ -427,7 +436,7 @@ def main(args):
             # -- Horizon lev1 aggregation
             elif lev1 == 'horizon':
                comp_ag_d = horizon_main(
-                   prop_dtype, d_cursor_args, agg_meth, abs_mm_b, d_ranges
+                   prop_dtype, d_cursor_args, agg_meth, d_ranges
                 )
                if len(comp_ag_d) == 0:
                     comp_ag_d['Place holder'] = None
@@ -439,6 +448,9 @@ def main(args):
             elif table == 'component':
                 comp_ag_d = None
 
+            agg_meth = agg_meth.lstrip("Absolute ")
+            if comtype == "Dominant Component":
+                agg_meth = "Dominant Component"
             done = comp_node(
                 agg_meth, mapunits, d_cursor_args, gssurgo_v, gdb_p,
                 module_p, tie_break, prec, q, delim, comp_ag_d, domain_d #, pH

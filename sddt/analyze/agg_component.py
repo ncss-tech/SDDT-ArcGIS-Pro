@@ -6,9 +6,12 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/20/2026
+@modified 03/26/2026
     @by: Alexnder Stum
-@Version: 0.1
+@Version: 0.2
+
+# --- Update 03/26/2026; v 0.2
+- Ammended errors related to summarizing categorical horizon attributes
 """
 
 from itertools import groupby
@@ -213,14 +216,14 @@ def comp_node(
                 if comp_ag_d:
                     for mk, comps in groupby(sCur, iget(0)):
                         props = set()
-                        pct = 0
+                        pcts = 0
                         for _, ck, c_pct in comps:
                             if(h_props := comp_ag_d.get(ck)) is not None:
                                 props.update(h_props)
-                                pct += c_pct
+                                pcts += c_pct
                         # prop_str = ', '.join(props)
                         iCur.insertRow(
-                            [mapunits.pop(mk), mk, sum(pcts), ', '.join(props)] #prop_str, domain_d[prop_str]
+                            [mapunits.pop(mk), mk, pcts, ', '.join(props)] #prop_str, domain_d[prop_str]
                         )
                 else:
                     for mk, comps in groupby(sCur, iget(0)):
@@ -291,6 +294,7 @@ def comp_node(
         # arcpy.AddError(f"{comps_p}")
         func = sys._getframe().f_code.co_name
         arcpy.AddError(pyErr(func))
+        arcpy.AddError(f"{list(comps)=}:\n{props=}\n{pcts=}")
         return False
 
 
@@ -421,7 +425,7 @@ def comp_con(
 
 def domain_it(
         comps: Iterator[list[ Key, Key, int, str],],
-        domain_d
+        domain_d: dict[str, int]
     ) -> list[Key, Key, int, str, int]:
     """Inserts the domain sequence into the comps package to direct tie breaks
     in Dominant Condition aggregation
@@ -436,6 +440,9 @@ def domain_it(
         1) Key: component key (cokey)
         2) Component percentage
         3) nominal property class
+
+    domain_d : dict[str, int]
+        choice: choicesequence
 
     Returns
     -------

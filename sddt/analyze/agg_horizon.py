@@ -6,9 +6,13 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/20/2026
+@modified 03/26/2026
     @by: Alexnder Stum
-@Version: 0.1
+@Version: 0.2
+
+# --- Update 03/26/2026; v 0.2
+- Ammended errors related to summarizing categorical horizon attributes
+
 """
 
 
@@ -160,7 +164,7 @@ def horzAbs(d_ranges: tuple[tuple[float, float],],
 
 
 def horzModal(d_ranges: tuple[tuple[float, float],],
-           chors: Iterator[list[Key, str, int, int]],
+           chors: Iterator[list[Key, int, int, str]],
     ) -> list[str]:
     """Determines the dominant categorical soil property by soil layer depths 
     from each genetic soil horizon. It is called by horizons grouped cokey
@@ -170,9 +174,10 @@ def horzModal(d_ranges: tuple[tuple[float, float],],
     d_ranges : tuple[tuple[float, float],]
         A sequence of depth pairs (top and bottom depths) of each soil depth 
         layer for which soil properties will be aggregated. [cm]
-    chors : Iterator[list[Key, str, int, int]]
-        The component key (not used), the categorical horizon property, and
-        horizion depths: hzdept_r [cm], hzdepb_r [cm].
+    chors : Iterator[list[Key, int, int, str]]
+        The component key (not used),
+        horizion depths: hzdept_r [cm], hzdepb_r [cm],
+        the categorical horizon property
 
     Returns
     -------
@@ -181,22 +186,23 @@ def horzModal(d_ranges: tuple[tuple[float, float],],
     """
     try:
         # group depths by category for each intersecting horizon
-        categories = []
-        depths = []
-        for horizon in chors:
-            # unpack
-            horizon = list(horizon)
-            categories.append(horizon[-1])
-            h_depths = horizon[1:3]
+        # Category: thickness
+        grp_depths = {horizon[-1] or 'not attributed': 
+                      horOverlap(d_ranges[0], horizon[1:3])
+                      for horizon in chors}
             
-            depths.append(
-                [horOverlap(layer_i, h_depths) for layer_i in d_ranges]
-            )
+            # maybe useful when multiple depths enabled
+            # thicks.append(
+            #     horOverlap(layer_i, h_depths) for layer_i in d_ranges
+            # )
         # Create a list of dominant properties by depth layer
-        dom_prop = [
-            max(grp_depths := sumby(categories, d_list), key=grp_depths.get) 
-            for d_list in zip(*depths)
-        ]
+        dom_prop = max(grp_depths, key=grp_depths.get) 
+
+        # possibly useful when multiple depths enabled
+        # dom_prop = [
+        #     max(grp_depths := sumby(categories, d_list), key=grp_depths.get) 
+        #     for d_list in zip(*thicks)
+        # ]
     
         return dom_prop
     except arcpy.ExecuteError:
@@ -210,8 +216,23 @@ def horzModal(d_ranges: tuple[tuple[float, float],],
         return False
     
 
-def sumby(cats, values):
+def sumby(cats: list[str], values: list[int]) -> dict[str, int]:
+    """Sum horizion thickness by category
+
+    Parameters
+    ----------
+    cats : list[str]
+        Nominal class
+    values : list[int]
+        horizon thickness within depth layer
+
+    Returns
+    -------
+    dict[str, int]
+        Key is the nominal class, value is the summed thickness
+    """
     grpby = {}
+    # category and thickness
     for cat, dp in zip(cats, values):
         if cat is None:
             cat = 'unpopulated'
@@ -310,12 +331,12 @@ def horOverlap(
 
 def hor2comp(
         comps: Iterator[list[Key, Key, int]] , comp_ag_d: dict[Key, Any]
-    )-> list[Any, int]:
+    )-> list[Key, Key, int, str]:
     """Collates aggregated horizon data within a map unit component group
 
     Parameters
     ----------
-    comps : Iterator[Key, int, Numeric]
+    comps : Iterator[Key, Key, int]
         A set of components with and each has the map unit key, comonent key, 
         component percentage
 
@@ -328,12 +349,12 @@ def hor2comp(
         aggregated horizon property, component percentage
     """
     try:
-        return [(prop[0], pct) if (prop := comp_ag_d.get(ck) is not None) 
-                else ('not horizonated', pct) for _, ck, pct in comps]
+        return [(mk, ck, pct, prop) if (prop := comp_ag_d.get(ck)) is not None 
+                else (mk, ck, pct, 'not horizonated') for mk, ck, pct in comps]
     except:
             func = sys._getframe().f_code.co_name
             arcpy.AddError(pyErr(func))
-            arcpy.AddError(f"{list(comps)}")
+            arcpy.AddError(f"{list(comps)}:\n{prop}")
             return None
 
 
@@ -362,7 +383,7 @@ def fragAg(chgrp: Iterator[Any]) -> float:
     return frag
 
 
-def horizon_main(prop_dtype, d_cursor_args, agg_meth, abs_mm_b, d_ranges):
+def horizon_main(prop_dtype, d_cursor_args, agg_meth, d_ranges):
     try:
         # Call horizon aggregation
         if prop_dtype == 'Numeric':
@@ -376,8 +397,8 @@ def horizon_main(prop_dtype, d_cursor_args, agg_meth, abs_mm_b, d_ranges):
                             comp_ag_d[ck].append(prop)
                         else:
                             comp_ag_d[ck] = [prop,]
-                elif abs_mm_b:
-                    if agg_meth == 'Maximum':
+                elif "Absolute" in agg_meth:
+                    if agg_meth == 'Absolute Maximum':
                         mORm = max
                     else:
                         mORm = min
@@ -393,6 +414,7 @@ def horizon_main(prop_dtype, d_cursor_args, agg_meth, abs_mm_b, d_ranges):
                         ck: horzAg(d_ranges, h) for ck, h  in # ,pH
                         groupby(sCur, iget(0))
                     }
+        # Dominant across depth layer
         else:
             with arcpy.da.SearchCursor(
                 **d_cursor_args['chorizon1c']
