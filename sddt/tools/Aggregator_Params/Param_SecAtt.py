@@ -57,7 +57,7 @@ class Param_SecAtt():
             dom_n = col_prop[5]
             dom_l = sorted(doms[dom_n])
             col_dom2 = [choice for _, choice in dom_l]
-            params_d[10] = [True, None, '*', col_dom2]
+            params_d[11] = [True, None, '*', col_dom2]
             params_d[21] = [True, False, '*', '*']
         
             self.error = None

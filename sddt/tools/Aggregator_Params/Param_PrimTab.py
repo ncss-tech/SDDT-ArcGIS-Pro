@@ -59,9 +59,7 @@ class Param_PrimTab():
             if tab_lab == 'Interpretations':
                 # Set filter list to available interps
                 params_d[5][3] = list(cols[tab_n].keys())
-                params_d.update(
-                    {i: [False, '*', '*', '*'] for i in range(6, 23)}
-                )
+                params_d['ALL_OFF'] = 6
 
             elif(tab_lab in ('Component Crop Yield: Irrigated', 
                             'Component Crop Yield: Nonirrigated')):
@@ -71,27 +69,24 @@ class Param_PrimTab():
                 dom_l = sorted(doms[col_dom])
                 plants = list(list(zip(*dom_l))[1])
 
-                meth_l = ["Weighted Average", "Dominant Component"]
+                meth_l = ["Weighted Average"]
 
                 params_d[5] = [True, 'Crop Name', '*', ['Crop Name',]]
-                params_d[6] = [True, None, None, plants]
+                params_d[6] = [True, 'All Components', '*', '*']
+                params_d[8] = [True, None, None, plants]
                 params_d[7] = [True, meth_l[0], '*', meth_l]
-                params_d[8] = [True, tab_lab, '*', [tab_lab,]]
-                params_d[9] = [True, 'Units', '*', ['Units',]]
-                params_d[10] = [True, None, '*', []]
+                params_d[9] = [True, tab_lab, '*', [tab_lab,]]
+                params_d[10] = [True, 'Units', '*', ['Units',]]
+                params_d[11] = [True, None, '*', []]
                 params_d['ALL_OFF'] = 11
             
             elif tab_n == 'Component Month':
-                params_d.update(
-                    {i: [False, '*', '*', '*'] for i in range(6, 23)}
-                )
+                params_d['ALL_OFF'] = 6
                 # incomplete
-                params_d[12][0] = True
+                params_d[13][0] = True
 
             else:
-                params_d.update(
-                    {i: [False, '*', '*', '*'] for i in range(6, 23)}
-                )
+                params_d['ALL_OFF'] = 6
                 params_d[5][3] = list(cols[tab_n].keys())
 
             self.error = None

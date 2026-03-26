@@ -47,13 +47,13 @@ class Param_AgMeth():
             if method != self.method:
                 self.method = method
 
-            if method == "Dominant Component":
-                # Percent cutoff not relavent
-                param_d[14] = [False, '*', '*', '*']
-                param_d[19] = [False, '*', '*', '*']
-            else:
-                param_d[14] = [True, '*', '*', '*']
-                param_d[19] = [True, '*', '*', '*']
+            # if method == "Dominant Component":
+            #     # Percent cutoff not relavent
+            #     param_d[14] = [False, '*', '*', '*']
+            #     param_d[19] = [False, '*', '*', '*']
+            # else:
+            #     param_d[14] = [True, '*', '*', '*']
+            #     param_d[19] = [True, '*', '*', '*']
 
             if(tab_lab in ('Component Crop Yield: Irrigated', 
                             'Component Crop Yield: Nonirrigated')):
@@ -61,32 +61,32 @@ class Param_AgMeth():
                 return
             if method == "Dominant Condition":
                 # Tiebreak relavent
-                param_d[13] = [True, '*', '*', '*']
+                param_d[14] = [True, '*', '*', '*']
             else:
-                param_d[13] = [False, '*', '*', '*']
+                param_d[14] = [False, '*', '*', '*']
             
             if method == "Percent Present":
                 dom_l = sorted(doms[dom_n])
                 col_dom2 = [choice for _, choice in dom_l]
-                param_d[6] = [True, None, '*', col_dom2]
+                param_d[8] = [True, None, '*', col_dom2]
                 param_d[20] = [True, '*', '*', '*']
             else:
-                param_d[6] = [False, None, '*', []]
+                param_d[8] = [False, None, '*', []]
                 param_d[20] = [False, '*', '*', '*']
 
-            # Horizon tables, provide option find absolute max/min value
-            if(tab_n.startswith('ch') 
-            and ((method == "Maximum") or (method == "Minimum"))):
-                param_d[22] = [True, '*', '*', '*']
-            else:
-                param_d[22] = [False, '*', '*', '*']
+            # # Horizon tables, provide option find absolute max/min value
+            # if(tab_n.startswith('ch') 
+            # and ((method == "Maximum") or (method == "Minimum"))):
+            #     param_d[22] = [True, '*', '*', '*']
+            # else:
+            #     param_d[22] = [False, '*', '*', '*']
 
             # Map Interp Fuzzy Values parameter
             if(tab_lab == 'Interpretations' 
             and method in ("Least Limiting", "Most Limiting")):
-                param_d[16] = [True, '*', '*', '*']
+                param_d[17] = [True, '*', '*', '*']
             else:
-                param_d[16] = [False, '*', '*', '*']
+                param_d[17] = [False, '*', '*', '*']
             
             self.error = None
             return param_d

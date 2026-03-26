@@ -21,7 +21,7 @@ that don't require any other additional methods or characteristics
 import arcpy
 
 
-def param10():
+def param11():
     param = arcpy.Parameter(
         displayName="Secondary Constraint",
         name="secondary",
@@ -35,7 +35,7 @@ def param10():
     return param
 
 
-def param11():
+def param12():
     param = arcpy.Parameter(
         displayName="Depth Ranges (cm)",
         name="depths",
@@ -54,7 +54,7 @@ def param11():
     return param
 
 
-def param13():
+def param14():
     param = arcpy.Parameter(
         displayName="Tie Break Rule",
         name="tie",
@@ -70,7 +70,7 @@ def param13():
     return param
 
 
-def param14():
+def param15():
     param = arcpy.Parameter(
         displayName="Component Percent Cutoff",
         name="comp_pct",
@@ -85,7 +85,7 @@ def param14():
     return param
 
 
-def param15():
+def param16():
     param = arcpy.Parameter(
         displayName="Property Range Value",
         name="range_value",
@@ -101,7 +101,7 @@ def param15():
     return param
 
 
-def param16():
+def param17():
     param = arcpy.Parameter(
         displayName="Map Interp Fuzzy Values",
         name="fuzzy",
@@ -116,7 +116,7 @@ def param16():
     return param
 
 
-def param17():
+def param18():
     param = arcpy.Parameter(
         displayName="Include Null Rating Values",
         name="rating_null",
@@ -130,7 +130,7 @@ def param17():
     return param
 
 
-def param18():
+def param19():
     param = arcpy.Parameter(
         displayName="Treat Null entries as Zero",
         name="null",
@@ -138,21 +138,6 @@ def param18():
         parameterType="Optional",
         datatype="GPBoolean",
         enabled=False
-    )
-    param.value = False
-
-    return param
-
-
-def param19():
-    param = arcpy.Parameter(
-        displayName="Only consider Major components",
-        name="major",
-        direction="Input",
-        parameterType="Optional",
-        datatype="GPBoolean",
-        enabled=False,
-        category='Optional'
     )
     param.value = False
 

@@ -54,8 +54,8 @@ class Param_SecTab():
             # Get attributes with domains
             atts = [k for k, v in cols.items() if v[5]]
 
-            params_d[9] = [True, None, '*', atts]
-            params_d[10] = [False, None, '*', []]
+            params_d[10] = [True, None, '*', atts]
+            params_d[11] = [False, None, '*', []]
 
             self.error = None
             return params_d

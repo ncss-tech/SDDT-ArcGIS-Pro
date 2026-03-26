@@ -82,9 +82,9 @@ class Param_SDVCat():
         if (dSDV["algorithmname"] == "percent present"):
             params[7].filter.list = ["Percent Present"]
             params[7].value = "Percent Present"
-            params[16].enabled = False # Turn off Fuzzy
-            params[17].enabled = False # Turn off Null rating
-            params[15].enabled = False # Turn off RV
+            params[17].enabled = False # Turn off Fuzzy
+            params[18].enabled = False # Turn off Null rating
+            params[16].enabled = False # Turn off RV
         # SDV attribute and No Aggregation Necessary
         elif (dSDV["algorithmname"] == "No Aggregation Necessary"):
             for i in range(6, len(params)):
@@ -115,10 +115,10 @@ class Param_SDVCat():
 
         # Numeric Soil Attributes
         elif dSDV["effectivelogicaldatatype"] in ["Integer", "Float"]:
-            params[15].enabled = True # Turn on hi/rv/lo
-            params[15].value = 'Representative'
-            params[17].enabled = False # Turn off Null rating
-            params[16].enabled = False # Turn off Interp Fuzzy Values
+            params[16].enabled = True # Turn on hi/rv/lo
+            params[16].value = 'Representative'
+            params[18].enabled = False # Turn off Null rating
+            params[17].enabled = False # Turn off Interp Fuzzy Values
             
             # Horizons level
             if dSDV["horzlevelattribflag"] == 1:
@@ -148,7 +148,7 @@ class Param_SDVCat():
                 params[i].enabled = False
         # Ordinal classes
         elif dSDV["tiebreakdomainname"]:
-            params[15].enabled = False # Turn off hi/rv/lo
+            params[16].enabled = False # Turn off hi/rv/lo
             params[7].filter.list = [
                 "Dominant Condition", "Dominant Component",
                 "Minimum", "Maximum"
@@ -157,7 +157,7 @@ class Param_SDVCat():
 
         # Nominal classes
         else:
-            params[15].enabled = False # Turn off hi/rv/lo
+            params[16].enabled = False # Turn off hi/rv/lo
             params[7].filter.list = [
                 "Dominant Condition", "Dominant Component"
             ]
@@ -165,16 +165,16 @@ class Param_SDVCat():
 
         # Set month table
         if dSDV["monthrangeoptionflag"] == 1:
-            params[12].enabled = True
+            params[13].enabled = True
         else:
-            params[12].enabled = False
+            params[13].enabled = False
 
         # Set for all SDV or Table options
         table = self.sdv_att[att]['attributetablename']
         if str(table).startswith('ch'):
-            params[11].enabled = True
+            params[12].enabled = True
         else:
-            params[11].enabled = False
+            params[12].enabled = False
     
 
     def updateSDV_Aggregation(self, params, att):
@@ -218,9 +218,9 @@ class Param_SDVCat():
             #crop = params[6].filter.list[0]
             #params[6].value = crop
             #params[10].filter.list = sorted(prim_d[crop])
-            params[10].enabled = True
+            params[11].enabled = True
             unit = params[10].filter.list[0]
-            params[10].value = unit
+            params[11].value = unit
 
         # Primary Constraints Only
         elif (p_col := self.sdv_att[att]["primaryconcolname"]):
@@ -247,21 +247,21 @@ class Param_SDVCat():
             else:
                 feat = params[6].filter.list[0]
                 params[6].value = feat
-            params[10].filter.list = []
-            params[10].value = None
-            params[10].enabled = False
+            params[11].filter.list = []
+            params[11].value = None
+            params[11].enabled = False
             
         else:
             params[6].filter.list = []
             params[6].value = None
             params[6].enabled = False
-            params[10].filter.list = []
-            params[10].value = None
-            params[10].enabled = False
+            params[11].filter.list = []
+            params[11].value = None
+            params[11].enabled = False
 
         # Tiebreaker Parameter (is this SDV specific?)
         if self.sdv_att[att]["tiebreakrule"] == -1:
             self.sdv_att[att]["tiebreakrule"] = 0
-            params[13].enabled = False
+            params[14].enabled = False
         else:
-            params[13].enabled = True
+            params[14].enabled = True

@@ -59,6 +59,7 @@ class Param_PrimAtt():
                 self.att = 'Crop Name'
                 return param_d
 
+            param_d[6] = [True, '*', '*', '*']
             # constraning to one selection
             vl = param.values
             vt = param.value
@@ -104,18 +105,21 @@ class Param_PrimAtt():
 
             if tab_lab ==  'Interpretations':
                 if itype == 'class':
-                    method_l = ["Dominant Condition", "Dominant Component"]
+                    method_l = ["Dominant Condition"]
+                    # method_l = ["Dominant Condition", "Dominant Component"]
                 else:
-                    method_l = ["Dominant Component", "Dominant Condition",
+                    # method_l = ["Dominant Component", "Dominant Condition",
+                    #     "Least Limiting", "Most Limiting", "Weighted Average"]
+                    method_l = ["Dominant Condition",
                         "Least Limiting", "Most Limiting", "Weighted Average"]
-                param_d[7] = [True, None, '*', method_l]
+                param_d[7] = [False, None, '*', method_l]
                 # Turn off constraints and secondary
-                param_d[6] = [False, '*', '*', '*']
                 param_d[8] = [False, '*', '*', '*']
                 param_d[9] = [False, '*', '*', '*']
                 param_d[10] = [False, '*', '*', '*']
                 param_d[11] = [False, '*', '*', '*']
-                param_d[15] = [False, '*', '*', '*']
+                param_d[12] = [False, '*', '*', '*']
+                param_d[16] = [False, '*', '*', '*']
                 param_d['ALL_OFF'] = 20
 
                 return param_d
@@ -123,49 +127,51 @@ class Param_PrimAtt():
             # If Integer w/ unit or Float
             elif(((dtype == "Integer") and itype) 
             or (dtype == "Float")):
-                method_l = ["Dominant Component", "Minimum", "Maximum", 
-                            "Weighted Average"]
-                param_d[7] = [True, None, '*', method_l]
+                # method_l = ["Dominant Component", "Minimum", "Maximum", 
+                #             "Weighted Average"]
+                method_l = ["Weighted Average", "Minimum", "Maximum"]
+                if tab_n.startswith('ch'):
+                    method_l += ["Absolute Minimum", "Absolute Maximum"]
+                param_d[7] = [False, None, '*', method_l]
                 # Turn on secondary options. May need to limit this
-                param_d[6] = [False, '*', '*', '*']
-                param_d[8] = [True, None, '*', self.s_tabs[tab_lab]]
-                param_d[9] = [False, '*', '*', '*']
+                param_d[8] = [False, '*', '*', '*']
+                param_d[9] = [True, None, '*', self.s_tabs[tab_lab]]
                 param_d[10] = [False, '*', '*', '*']
+                param_d[11] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
 
             # If there is a domain
             elif col_dom:
-                method_l = [
-                    "Dominant Condition", "Dominant Component", 
-                    "Percent Present"
-                ]
-                param_d[7] = [True, None, '*', method_l]
-                param_d[8] = [False, '*', '*', '*']
+                # method_l = ["Dominant Condition", "Dominant Component", 
+                #     "Percent Present"]
+                method_l = ["Dominant Condition", "Percent Present"]
+                param_d[7] = [False, None, '*', method_l]
                 param_d[9] = [False, '*', '*', '*']
                 param_d[10] = [False, '*', '*', '*']
+                param_d[11] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
 
             elif att:
-                method_l = ["Dominant Condition", "Dominant Component"]
-                param_d[7] = [True, None, '*', method_l]
-                param_d[8] = [False, '*', '*', '*']
+                method_l = ["Dominant Condition"]
+                param_d[7] = [False, "Dominant Condition", '*', method_l]
                 param_d[9] = [False, '*', '*', '*']
                 param_d[10] = [False, '*', '*', '*']
+                param_d[11] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
             else:
                 return {'ALL_OFF': 6}
 
             if tab_n.startswith('ch'):
-                param_d[11] = [True, '*', '*', '*']
+                param_d[12] = [True, '*', '*', '*']
             else:
-                param_d[11] = [False, '*', '*', '*']
+                param_d[12] = [False, '*', '*', '*']
             if RV.get(att):
-                param_d[15] = [True, '*', '*', '*']
+                param_d[16] = [True, '*', '*', '*']
             else:
-                param_d[15] = [False, '*', '*', '*']
+                param_d[16] = [False, '*', '*', '*']
 
             self.error = None
             return param_d
