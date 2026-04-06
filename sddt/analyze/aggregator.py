@@ -361,7 +361,7 @@ def main(args):
         if comp_cut:
             comp_where1 += f" AND comppct_r >= {comp_cut}"
             comp_where2 += f" AND comppct_r >= {comp_cut}"
-        if comp_cut != "All Components":
+        if comptype != "All Components":
             comp_where1 += " AND majcompflag = 'Yes'"
             comp_where2 += " AND majcompflag = 'Yes'"
         if prim_constraint and table == 'component':
