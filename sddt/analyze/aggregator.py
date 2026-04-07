@@ -6,10 +6,12 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/20/2026
+@modified 04/06/2026
     @by: Alexnder Stum
-@Version: 0.8
+@Version: 0.8.1
 
+# --- Update 04/06/2026
+- It was excluding minors, even when user specified All Components
 # --- Update 03/26/2026; v 0.8
 - Ammended errors related to summarizing categorical horizon attributes
 - Revamped aggregator to include Which Components parameter, removed Absolute
