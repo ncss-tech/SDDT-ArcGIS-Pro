@@ -80,7 +80,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.7'
+v = '0.8.1'
 
 
 import re
