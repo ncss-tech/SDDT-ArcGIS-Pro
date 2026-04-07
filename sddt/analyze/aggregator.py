@@ -6,11 +6,14 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 04/06/2026
+@modified 04/07/2026
     @by: Alexnder Stum
-@Version: 0.8.1
+@Version: 0.8.2
 
-# --- Update 04/06/2026
+# --- Update 04/07/2026, v. 0.8.2
+- If primary or secondary constraints are inverted by user, 
+query would error as 'NOT' in wrong place
+# --- Update 04/06/2026, v. 0.8.1
 - It was excluding minors, even when user specified All Components
 # --- Update 03/26/2026; v 0.8
 - Ammended errors related to summarizing categorical horizon attributes
@@ -80,7 +83,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.8.1'
+v = '0.8.2'
 
 
 import re
@@ -335,13 +338,13 @@ def main(args):
             # sometimes they have single quotes already and get double bagged
             atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
-            prim_str = f"""IN {primNOT} ('{atts_delim}')"""
+            prim_str = f"""{primNOT} IN ('{atts_delim}')"""
         if sec_constraint:
             atts = sec_constraint.split(';')
             # sometimes they have single quotes already and get double bagged
             atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
-            sec_str = f"""IN {secNOT} ('{atts_delim}')"""
+            sec_str = f"""{secNOT} IN ('{atts_delim}')"""
             # arcpy.AddMessage(f"{sec_str=}")
 
         # -- Secondary aggregation levels
