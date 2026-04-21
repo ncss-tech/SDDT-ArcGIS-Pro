@@ -730,7 +730,7 @@ class Aggregator(object):
             path = os.path.dirname(file_path) + '/post.log'
             # logger = logging.getLogger(__name__)
             logging.basicConfig(
-                filename=path, level=logging.ERROR, 
+                filename=path, level=logging.ERROR, filemode='w',
                 format='%(asctime)s - %(levelname)s - %(message)s'
             )
             # logger.info('Started')
