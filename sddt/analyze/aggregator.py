@@ -225,7 +225,7 @@ def main(args):
                 with (arcpy.da.SearchCursor(
                     db_p, "resultcolumnname", where_clause=q
                 ) as sCur):
-                    col_stub = next(sCur)
+                    col_stub = next(sCur, None)
                 if col_stub:
                     col_n = f"{col_stub[0]}_{agg_label}"
                     tab_n = f"ag_{col_stub[0]}_{agg_label}"
