@@ -15,10 +15,19 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/26/2026
+@modified 04/20/2026
     @by: Alexnder Stum
-@version 1.4
+@version 1.5
 
+# --- Updated 4/20/2026, v 1.5
+- Added Flooding and Ponding frequency
+- Added new parameter Which Components which enables for a selection of
+ aggregations to be used with Dominant Component
+ - Fixed issues with symbolizing of joined features. Issues still remain
+ when the user runs the two twice in a row or more.
+- Aboslute min/max switch no longer needed as Absolute Min/Max is now a 
+distinct aggregation method now that Which Components allows for more 
+operation stratification
 # --- Updated 3/26/2026, v 1.4
 - Revamped aggregator to include Which Components parameter, removed Absolute
 Min/Max boolean parameter and the Major boolean paramter
@@ -46,8 +55,9 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.4"
+version = "1.5"
 
+import logging
 import sys
 import os
 from importlib import reload
@@ -92,13 +102,10 @@ class Toolbox(object):
 # https://pro.arcgis.com/en/pro-app/latest/arcpy/geoprocessing_and_python/a-template-for-python-toolboxes.htm
 
 
-import re
 import os
 import inspect
-from itertools import groupby
 
 import arcpy
-from arcpy.da import SearchCursor
 
 # from ..analyze.aggregator import main as aggregator
 # from .. import pyErr
@@ -114,6 +121,7 @@ arcpy.env.addOutputsToMap = True
 
 class Aggregator(object):
     # output table
+    error = ''
     ag_out = ''
     in_feat = ''
 
@@ -121,7 +129,10 @@ class Aggregator(object):
             "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
             "Minimum": 'MIN', "Maximum": 'MAX', "Weighted Average": 'WTA', 
             "Percent Present": 'PP', 'Least Limiting': 'LL', 
-            'Most Limiting': 'ML'
+            'Most Limiting': 'ML', "Absolute Minimum": "AMIN", 
+            "Absolute Maximum": "AMAX", "Median Frequency": "MFREQ", 
+            "Highest Frequency": "HFREQ", "Lowest Frequency": "LFREQ",
+            "Frequency Count": "FREQC"
         }
 
     param_indb = Param_InDB()
@@ -213,18 +224,8 @@ class Aggregator(object):
         # parameter 12: Depth Ranges
         params.append(Param_AllOthers.param12())
 
-        # parameter 13
-        params.append(arcpy.Parameter(
-            displayName="Timespan",
-            name="month1",
-            direction="Input",
-            parameterType="Optional",
-            datatype="GPValueTable",
-            enabled=False
-        ))
-        # params[-1].columns = [["GPString", "Beginning"], ["GPString", "End"]]
-        # params[-1].filters[0].list = Aggregator.months
-        # params[-1].filters[1].list = Aggregator.months
+        # parameter 13: Select Annual or month(s)
+        params.append(Param_AllOthers.param13())
 
         # parameter 14: Tie Break Rule
         params.append(Param_AllOthers.param14())
@@ -266,141 +267,152 @@ class Aggregator(object):
         has been changed."""
         # --- Gateway: first 2 parameters
         # User just selected a db set layers to db contents
-        if params[0].value and not params[0].hasBeenValidated:
-            params[1].filter.list = Aggregator.param_indb.update(
-                params[0].valueAsText
-            )
-            # is current feature in db?
-            if params[1].value not in params[1].filter.list:
-                params[1].value = None
-            # is it in a gSSURGO FGDB
-            if not Aggregator.param_indb.is_ssurgo:
-                params[0].value = None
-                # params[1].value = None
-            params_d = Aggregator.param_filter.update("By Table")
-            self.param_updater(params, params_d)
-            
-        # User just blanked db reset ToC layers
-        if not params[0].value and not params[0].hasBeenValidated:
-            params[1].value = None
-            params[1].filter.list = list(self.param_infeat.paths.keys())
-            self.param_updater(params, {'ALL_OFF': 2})
-            return
-        
-        # User just selected a layer, set db to match
-        if (lyr_sel := params[1].value) and not params[1].hasBeenValidated:
-            if not params[0].value: 
-                # Get path of select feature from ToC
-                params[0].value = os.path.dirname(
-                    self.param_infeat.paths[lyr_sel]
-                )
-                # Update filter list to reflect db
+        try:
+            if params[0].value and not params[0].hasBeenValidated:
                 params[1].filter.list = Aggregator.param_indb.update(
                     params[0].valueAsText
                 )
-                # if not gSSURGO FGDB
+                # is current feature in db?
+                if params[1].value not in params[1].filter.list:
+                    params[1].value = None
+                # is it in a gSSURGO FGDB
                 if not Aggregator.param_indb.is_ssurgo:
                     params[0].value = None
-                    params[1].value = None
-                    return
-                # Get feature name
-                feat_p = self.param_infeat.paths.get(lyr_sel)
-                # lyr_sel = lyr_sel[lyr_sel.index(':') + 2:]
-                if feat_p:
-                    feat_n = os.path.basename(feat_p)
-                    params[1].value = feat_n
-                params[2].enabled = True
+                    # params[1].value = None
+                params_d = Aggregator.param_filter.update("By Table")
+                self.param_updater(params, params_d)
+                
+            # User just blanked db reset ToC layers
+            if not params[0].value and not params[0].hasBeenValidated:
+                params[1].value = None
+                params[1].filter.list = list(self.param_infeat.paths.keys())
+                self.param_updater(params, {'ALL_OFF': 2})
+                return
             
-            ### Temp ###
-            params_d = Aggregator.param_filter.update("By Table")
-            self.param_updater(params, params_d)
+            # User just selected a layer, set db to match
+            if (lyr_sel := params[1].value) and not params[1].hasBeenValidated:
+                if not params[0].value: 
+                    # Get path of select feature from ToC
+                    params[0].value = os.path.dirname(
+                        self.param_infeat.paths[lyr_sel]
+                    )
+                    # Update filter list to reflect db
+                    params[1].filter.list = Aggregator.param_indb.update(
+                        params[0].valueAsText
+                    )
+                    # if not gSSURGO FGDB
+                    if not Aggregator.param_indb.is_ssurgo:
+                        params[0].value = None
+                        params[1].value = None
+                        return
+                    # Get feature name
+                    feat_p = self.param_infeat.paths.get(lyr_sel)
+                    # lyr_sel = lyr_sel[lyr_sel.index(':') + 2:]
+                    if feat_p:
+                        feat_n = os.path.basename(feat_p)
+                        params[1].value = feat_n
+                    params[2].enabled = True
+                
+                ### Temp ###
+                params_d = Aggregator.param_filter.update("By Table")
+                self.param_updater(params, params_d)
 
-        if not params[0].value:
-            return
+            if not params[0].value:
+                return
 
-        #######
-        # Place holder for param[2]: param_filter, for now locked as "By Table"
-        # ############ Temporary till SDV cats enabled ############
-        # if params[2].value:
-        #     params[4].enabled = True 
-        
-        # if (filt := params[2].value) and not params[2].hasBeenValidated:
-        #     params_d = Aggregator.param_filter.update(filt)
-        #     self.param_updater(params, params_d)
-        ####### 
+            #######
+            # Place holder for param[2]: param_filter, for now locked as "By Table"
+            # ############ Temporary till SDV cats enabled ############
+            # if params[2].value:
+            #     params[4].enabled = True 
+            
+            # if (filt := params[2].value) and not params[2].hasBeenValidated:
+            #     params_d = Aggregator.param_filter.update(filt)
+            #     self.param_updater(params, params_d)
+            ####### 
 
-        # Primary Table hass be selected
-        if (tab_lab := params[4].value) and not params[4].hasBeenValidated:
-            params_d = Aggregator.param_primtab.update(
-                tab_lab,
-                Aggregator.param_indb.cols, Aggregator.param_indb.doms
-            )
-            self.param_updater(params, params_d)
-        # elif not params[4].value:
-        #     self.param_updater(params, {'ALL_OFF': 5})
-        #     return
+            # Primary Table hass be selected
+            if (tab_lab := params[4].value) and not params[4].hasBeenValidated:
+                params_d = Aggregator.param_primtab.update(
+                    tab_lab,
+                    Aggregator.param_indb.cols, Aggregator.param_indb.doms
+                )
+                self.param_updater(params, params_d)
+            # elif not params[4].value:
+            #     self.param_updater(params, {'ALL_OFF': 5})
+            #     return
 
-        # Primary Attribute selected
-        elif not params[5].hasBeenValidated:
-            tab_n = Aggregator.param_primtab.tabs[tab_lab]
-            params_d = Aggregator.param_primatt.update(
-                params[5], tab_lab, tab_n, 
-                Aggregator.param_indb.cols, Aggregator.param_indb.RV
-            )
-            self.param_updater(params, params_d)
-            if params[6].value:
+            # Primary Attribute selected
+            elif not params[5].hasBeenValidated:
+                tab_n = Aggregator.param_primtab.tabs[tab_lab]
+                params_d = Aggregator.param_primatt.update(
+                    params[5], tab_lab, tab_n, 
+                    Aggregator.param_indb.cols, Aggregator.param_indb.RV
+                )
+                self.param_updater(params, params_d)
+                # which components specified
+                if params[6].value:
+                    params_d = Aggregator.param_comtype.update(
+                        params[6].value, params[7].filter.list, 
+                        params[5].valueAsText
+                    )
+                    self.param_updater(params, params_d)
+
+            # Component Crop Yield
+            elif(params[4].value and 'Component Crop Yield' in params[4].value 
+            and params[8].value and not params[8].hasBeenValidated):
+                crop = params[8].values[0]
+                unit_l = Aggregator.param_indb.crp_units[crop]
+                params_d = Aggregator.param_primcon.update(unit_l)
+                self.param_updater(params, params_d)
+
+            # Component type selection
+            elif params[6].value and not params[6].hasBeenValidated:
                 params_d = Aggregator.param_comtype.update(
                     params[6].value, params[7].filter.list, params[5].valueAsText
                 )
                 self.param_updater(params, params_d)
 
-        # Component Crop Yield
-        elif(params[4].value and 'Component Crop Yield' in params[4].value 
-           and params[8].value and not params[8].hasBeenValidated):
-            crop = params[8].values[0]
-            unit_l = Aggregator.param_indb.crp_units[crop]
-            params_d = Aggregator.param_primcon.update(unit_l)
-            self.param_updater(params, params_d)
+            # Aggregation method selected, activate secondary constraints? 
+            elif params[7].value and not params[7].hasBeenValidated:
+                tab_n = Aggregator.param_primtab.tabs[tab_lab]
+                att = att = Aggregator.param_primatt.att
+                dom_n = Aggregator.param_indb.cols[tab_n][att][5]
 
-        # Component type selection
-        elif params[6].value and not params[6].hasBeenValidated:
-            params_d = Aggregator.param_comtype.update(
-                params[6].value, params[7].filter.list, params[5].valueAsText
-            )
-            self.param_updater(params, params_d)
+                params_d = Aggregator.param_agmeth.update(
+                    params[7].value, tab_lab, tab_n, 
+                    dom_n, Aggregator.param_indb.doms
+                )
+                self.param_updater(params, params_d)
 
-        # Aggregation method selected, activate secondary constraints? 
-        elif params[7].value and not params[7].hasBeenValidated:
-            tab_n = Aggregator.param_primtab.tabs[tab_lab]
-            att = att = Aggregator.param_primatt.att
-            dom_n = Aggregator.param_indb.cols[tab_n][att][5]
-            # col_prop = tab_d[att]
-            # dom_n = col_prop[5]
-            params_d = Aggregator.param_agmeth.update(
-                params[7].value, tab_lab, tab_n, 
-                dom_n, Aggregator.param_indb.doms
-            )
-            self.param_updater(params, params_d)
+            # A secondary table was selected
+            if (stab_lab := params[9].value) and not params[9].hasBeenValidated:
+                stab_n = Aggregator.param_primtab.tabs[stab_lab]
+                cols = Aggregator.param_indb.cols[stab_n]
+                params_d = Aggregator.param_sectab.update(
+                    stab_lab, cols, tab_lab, Aggregator.param_primatt.att
+                )
+                self.param_updater(params, params_d)
+            else:
+                params_d = {10: [False, None, '*', '*']}
+                params_d[11] = [False, None, '*', '*']
+                self.param_updater(params, params_d)
 
-        # A secondary table was selected
-        elif (stab_lab := params[9].value) and not params[9].hasBeenValidated:
-            stab_n = Aggregator.param_primtab.tabs[stab_lab]
-            cols = Aggregator.param_indb.cols[stab_n]
-            params_d = Aggregator.param_sectab.update(
-                stab_lab, cols, tab_lab
-            )
-            self.param_updater(params, params_d)
-
-        # A secondary attribute selected and Component Crop Yield
-        elif (sec_att := params[10].value) and not params[10].hasBeenValidated:
-            stab_n = Aggregator.param_primtab.tabs[stab_lab]
-            cols = Aggregator.param_indb.cols[stab_n]
-            params_d = Aggregator.param_secatt.update(
-                sec_att, cols, Aggregator.param_indb.doms, tab_lab
-            )
-            self.param_updater(params, params_d)
-            
-        return
+            # A secondary attribute selected
+            if (sec_att := params[10].value) and not params[10].hasBeenValidated:
+                stab_n = Aggregator.param_primtab.tabs[stab_lab]
+                cols = Aggregator.param_indb.cols[stab_n]
+                params_d = Aggregator.param_secatt.update(
+                    sec_att, cols, Aggregator.param_indb.doms, tab_lab
+                )
+                self.param_updater(params, params_d)
+              
+            return
+        except:
+            # arcpy.AddError(f"{comps_p}")
+            func = sys._getframe().f_code.co_name
+            Aggregator.error = pyErr(func)
+            return
 
     def updateMessages(self, params):
         """Modify the messages created by internal validation for each tool
@@ -462,21 +474,22 @@ class Aggregator(object):
                     "Select only one Primary Soil Attribute"
                 )
 
-        if params[7].value == "Percent Present" and not params[8].value:
+        if(params[7].value in ['Percent Present', 'Frequency Count'] 
+           and not params[8].value):
             params[8].setErrorMessage(
-                "A Primary Constraint required when Percent Present selected"
+                "A Primary Constraint required"
             )
-        if params[9].enabled and params[8].value and not params[10].value:
+        if params[10].enabled and params[9].value and not params[10].value:
             params[10].setErrorMessage(
                 "A Secondary Attribute must be specified with Secondary Table"
             )
-        if params[9].enabled and params[9].value and not params[11].value:
+        if params[11].enabled and params[10].value and not params[11].value:
             params[11].setErrorMessage(
                 "A Secondary Constraint must be specified with Secondary Table"
             )
         
         return
-
+    
     def execute(self, params, messages):
         """The source code of the tool."""
         arcpy.AddMessage(f"Tool_Aggregator {version=}")
@@ -531,17 +544,14 @@ class Aggregator(object):
             # abs_mm = False
 
         agg_meth = params[7].value
-        if params[13].value:
-            months = params[13].value.getTrueRow(0)
-        else:
-            months = None
-        if params[8].enabled:
+
+        if params[8].enabled and params[8].value:
             prim_con = params[8].valueAsText
         else:
             prim_con = ''
 
         # Is there Secondary constraint?
-        if params[9].enabled and params[9].value:
+        if params[9].enabled and params[9].valueAsText:
             sec_tab_lab = params[9].valueAsText # 6: Secondary Table
             sec_att_lab = params[10].valueAsText # 7: Secondary Attribute
             sec_con = params[11].valueAsText # 8: Secondary Constratint
@@ -553,6 +563,12 @@ class Aggregator(object):
             sec_tab = None
             sec_att = None
             sec_con = None
+
+        if params[13].value:
+            months = params[13].valueAsText
+        else:
+            months = None
+
         # Tab name, column name
         ag_out = sddt.analyze.aggregator.main([
             params[0].valueAsText, # 0: SSURGO database
@@ -567,7 +583,7 @@ class Aggregator(object):
             # Change when multiple depth ranges ready
             depths, # 9: depth ranges
             months, # 10: months
-            params[14].value, # 11: Tiebreak for dominant condition
+            params[14].valueAsText, # 11: Tiebreak for dominant condition
             None, # 12: Null = 0
             params[15].value, # 13: Component % cutoff
             params[17].value, # 14: fuzzy map
@@ -585,7 +601,7 @@ class Aggregator(object):
             output = f"{gdb_p}\\{ag_out[0]}"
             Aggregator.ag_out = ag_out
             arcpy.AddMessage(f"Summary table has been created: {output}")
-            
+         
         return
 
     def postExecute(self, params):
@@ -600,7 +616,6 @@ class Aggregator(object):
                 tab_n = Aggregator.ag_out[0]
                 tab_p = os.path.normpath(f"{gdb_p}\\{tab_n}")
                 
-                aprx = arcpy.mp.ArcGISProject("CURRENT")
                 map = aprx.activeMap
                 tab_mp = arcpy.mp.Table(tab_p)
                 map.addTable(tab_mp)
@@ -627,11 +642,11 @@ class Aggregator(object):
 
                     agg_meth = params[7].value
 
-                    if tab_n.startswith('ch'):
+                    if tab_n.startswith('ag_ch'):
                         depths = params[12].value
                     else:
                         depths = None
-                    sym_fld = f"{Aggregator.ag_out[0]}.{Aggregator.ag_out[1]}"
+                    sym_fld = f'{tab_n}.{Aggregator.ag_out[1]}'
 
                     # Create layer name
                     if depths:
@@ -664,15 +679,19 @@ class Aggregator(object):
                         if fld.type == 'String':
                             arcpy.SetProgressor('Applying Symbology')
                             soil_sym.updateRenderer('UniqueValueRenderer')
-                            soil_sym.renderer.fields = [sym_fld]
+                            base_fld = Aggregator.ag_out[1].lstrip('prop_')
+                            seq_fld = f'{tab_n}.seq_{base_fld}'
+                            soil_sym.renderer.fields = [seq_fld, sym_fld]
                         else:
                             arcpy.SetProgressor('Applying Symbology')
                             soil_sym.updateRenderer("GraduatedColorsRenderer")
-                            soil_sym.renderer.classificationField = sym_fld
+                            soil_sym.renderer.classificationField = fld.name
                             soil_sym.renderer.breakCount = 6
 
                         soil_lyr_obj.symbology = soil_sym
                         add_out = map.addLayer(soil_lyr_obj)
+
+                        # del soil_sym, soil_lyr_obj, add_out, soil_lyr
 
                     # Raster
                     else:
@@ -704,7 +723,19 @@ class Aggregator(object):
 
                             # soil_lyr_obj.symbology = soil_sym
                         add_out = map.addLayer(soil_lyr_obj)
+                del map
+            del aprx
         except:
+            file_path = os.path.abspath(__file__)
+            path = os.path.dirname(file_path) + '/post.log'
+            # logger = logging.getLogger(__name__)
+            logging.basicConfig(
+                filename=path, level=logging.ERROR, 
+                format='%(asctime)s - %(levelname)s - %(message)s'
+            )
+            # logger.info('Started')
+            logging.exception(pyErr('postExecute'))
+
             pass
             # arcpy.AddError(pyErr('postExecute'))
         return

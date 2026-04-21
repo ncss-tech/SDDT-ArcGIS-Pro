@@ -1,2 +1,89 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<metadata xml:lang="en"><Esri><CreaDate>20260302</CreaDate><CreaTime>14005200</CreaTime><ArcGISFormat>1.0</ArcGISFormat><SyncOnce>TRUE</SyncOnce></Esri></metadata>
+<?xml version="1.0"?>
+<metadata xml:lang="en">
+	<Esri>
+		<CreaDate>20260302</CreaDate>
+		<CreaTime>14005200</CreaTime>
+		<ArcGISFormat>1.0</ArcGISFormat>
+		<SyncOnce>TRUE</SyncOnce>
+		<ModDate>20260305</ModDate>
+		<ModTime>16364900</ModTime>
+		<scaleRange>
+			<minScale>150000000</minScale>
+			<maxScale>5000</maxScale>
+		</scaleRange>
+		<ArcGISProfile>ISO19115_3</ArcGISProfile>
+	</Esri>
+	<tool name="Lookup" displayname="Raster Lookup by Table" toolboxalias="Soil Data Development Toolbox">
+		<arcToolboxHelpPath>c:\program files\arcgis\pro\Resources\Help\gp</arcToolboxHelpPath>
+		<parameters>
+			<param name="raster_source" displayname="Input Raster to be Reclassified" type="Required" direction="Input" datatype="Raster Layer" expression="raster_source">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The input raster to be reclassified. Inputs can be ESRI rasters in File Geodatabase or GeoTiffs. Other formats might work but haven't been tested.&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;rast_p : str&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="raster_output" displayname="Reclassified Output Raster (only as .tif)" type="Required" direction="Output" datatype="Raster Dataset" expression="raster_output">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The reclassified output raster. This tool can only create GeoTiff rasters.&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;rast_o : str&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="lookup_table" displayname="Lookup Table" type="Required" direction="Input" datatype="Table View" expression="lookup_table">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The lookup table which has at least two fields, a field with the current raster values and a field with the new raster values. When the new value is a string, it can be useful to have a third additional integer field if your classes have an associated key or ordinal sequence.&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;mk_f : str&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="mukey_fld" displayname="Field with Current Raster Values (mukey)" type="Required" direction="Input" datatype="Field" expression="mukey_fld">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The field name from the lookup table with the current input raster values.&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;mk_f : str&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="prop_fld" displayname="Field with New Raster Value/Class (property or interp)" type="Required" direction="Input" datatype="Field" expression="prop_fld">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The field name from the lookup table with the new value or class field  of the output raster.&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;prop_f : str&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="seq_fld" displayname="Field with Sequence or Key Index (optional)" type="Optional" direction="Input" datatype="Field" expression="{seq_fld}">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Optional: The field name from the lookup table that holds key or sequence index. This is useful of the nominal class has a specific order they should be written in the RAT which will enhance symbolization. If not specified and input is determined to be nominal (integer or string).&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;sort_f : Optional[str], optional&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="seq_type" displayname="Null Class Behavior (optional)" type="Optional" direction="Input" datatype="String" expression="{NoData | None}">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;What to do if an input value in the lookup table has a null Value/Class. &lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;If "NoData" is specified (default) then these pixels will be reclassified with the output nodata value. &lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;If "None" is specified these pixels will receive the "Null Class Value" if specified. Otherwise an arbitrary index value is assigned. Each will have the with the class text of 'None'. &lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Note: That any input raster values not found in the lookup table will always be reclassified with the output nodata value.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Note: This option is only applied if the input raster data type is integer&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;null_id_opt : Optional[str], optional&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="seq_nd" displayname="Null Class Value (optional)" type="Optional" direction="Input" datatype="Long" expression="{seq_nd}">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;The key or sequence value applied to values with a null class value.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;Note: this option is only applicable if the Null Class Behavior is "None" and the input raster is an integer data type&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;null_id : Optional[int], optional&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+			<param name="nd" displayname="NoData Value (optional)" type="Optional" direction="Input" datatype="Double" expression="{nd}">
+				<dialogReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;Generally recommended not to specify, but the user can specify the output no data value. Otherwise the default value is 0 if output is integer or 3.40282306e+38 if float&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</dialogReference>
+				<pythonReference>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;nd_user : Optional[Numeric], optional&lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;</pythonReference>
+			</param>
+		</parameters>
+		<summary>&lt;DIV STYLE="text-align:Left;"&gt;&lt;DIV&gt;&lt;DIV&gt;&lt;P&gt;&lt;SPAN&gt;This tool reclassifies table by table with key differences between the ESRI Reclassify and Lookup tools.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;It was developed with SSURGO MURASTERs in mind where soil properties/interps aggregated by map unit could hardened instead of just joined to a RAT. This is particularly useful for use and visualization in QGIS.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;This tool is similar to ESRI Reclassify by Table geoprocessing tool, but allows the Value field to be a float or integer data type and the lookup value to be either String or Numeric. When it is String, it conserves this nominal class in the output's RAT. Also, in the case of using summary tables from SDDT, you won't have to first make an integer field to hold the mukey field.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;This script is also similar to ESRI Lookup, but Lookup behaves very poorly with joined  fields, often failing to complete when the raster is modest in size. As a  work around one can add fields to the raster, perform a join, calculate a field, remove the join, and then perform Lookup. This tool avoids all that. Also, the ESRI Lookup and Reclassify tools do not create pyramids.&lt;/SPAN&gt;&lt;/P&gt;&lt;P&gt;&lt;SPAN&gt;This tool is equivalent in processing time to the ESRI tools but without the hassles. &lt;/SPAN&gt;&lt;/P&gt;&lt;/DIV&gt;&lt;/DIV&gt;&lt;/DIV&gt;</summary>
+		<scriptExamples>
+			<scriptExample>
+				<title>Raster Lookup by Table</title>
+			</scriptExample>
+		</scriptExamples>
+	</tool>
+	<dataIdInfo>
+		<idCitation>
+			<resTitle>Raster Lookup by Table</resTitle>
+		</idCitation>
+		<searchKeys>
+			<keyword>reclassify raster</keyword>
+			<keyword>lookup raster</keyword>
+		</searchKeys>
+		<idCredit>@author: Alexander Stum
+@maintainer: Alexander Stum
+    @title:  GIS Specialist &amp; Soil Scientist
+    @organization: National Soil Survey Center, USDA-NRCS
+    @email: alexander.stum@usda.gov</idCredit>
+	</dataIdInfo>
+	<distInfo>
+		<distributor>
+			<distorFormat>
+				<formatName>ArcToolbox Tool</formatName>
+			</distorFormat>
+		</distributor>
+	</distInfo>
+	<mdHrLv>
+		<ScopeCd value="005">
+		</ScopeCd>
+	</mdHrLv>
+	<mdDateSt Sync="TRUE">20260305</mdDateSt>
+</metadata>
