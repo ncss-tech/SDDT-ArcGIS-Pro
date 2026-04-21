@@ -14,10 +14,11 @@ from .agg_component import dom_com
 from .agg_component import comp_wtavg
 from .agg_component import comp_con
 from .agg_component import comp_node
+from .agg_month import comonth_node
 
 from .agg_interp import interp_node
 
 
 __all__ = ["horizon_main",
            "comp_con", "comp_node", "comp_wtavg", "dom_com",
-           "interp_node"]
+           "interp_node", "comonth_node"]

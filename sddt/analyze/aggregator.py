@@ -6,10 +6,14 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 04/07/2026
+@modified 03/20/2026
     @by: Alexnder Stum
-@Version: 0.8.2
+@Version: 0.9
 
+
+# --- Update 04/20/2026, v. 0.9
+- Added flooding and ponding functionality
+- pushed summary table construtions out to agg_commons as bld_table
 # --- Update 04/07/2026, v. 0.8.2
 - If primary or secondary constraints are inverted by user, 
 query would error as 'NOT' in wrong place
@@ -83,7 +87,7 @@ Updated 07/15/2025; v 0.2
 - Fixed aggregation for nominal horizon properties
 
 """
-v = '0.8.2'
+v = '0.9'
 
 
 import re
@@ -97,8 +101,10 @@ from .. import arcpyErr
 from .agg_horizon import horizon_main
 from .agg_component import comp_node
 from .agg_interp import interp_node
+from .agg_month import comonth_node
 from .agg_commons import cursor_args
 from .agg_commons import getVersion
+from .agg_commons import bld_table
 
 
 def main(args):
@@ -106,14 +112,14 @@ def main(args):
         gdb_p = args[0] # SSURGO database
         table = args[1] # SSURGO table summarized attribute sourced from
         att_col = args[2] # The table column being summarized
-        comtype = args[3]
+        comptype = args[3]
         agg_meth = args[4] # Aggregation method
         prim_constraint = args[5] # criteria
         sec_table = args[6]
         sec_att = args[7]
         sec_constraint = args[8] # criteria
         d_ranges = args[9]
-        month1 = args[10]
+        months = args[10]
         tie_break = args[11]
         null0_b = args[12]
         comp_cut = args[13]
@@ -131,7 +137,7 @@ def main(args):
         arcpy.env.workspace = gdb_p
         arcpy.env.overwriteOutput = True
 
-        if not agg_meth and comtype == 'Dominant Component':
+        if not agg_meth and comptype == 'Dominant Component':
             agg_meth = 'Dominant Component'
 
         # Aggregation Algorithms and acronymns 
@@ -140,7 +146,9 @@ def main(args):
             "Minimum": 'MIN', "Maximum": 'MAX', "Weighted Average": 'WTA', 
             "Percent Present": 'PP', 'Least Limiting': 'LL', 
             'Most Limiting': 'ML', "Absolute Minimum": "AMIN", 
-            "Absolute Maximum": "AMAX"
+            "Absolute Maximum": "AMAX", "Median Frequency": "MFREQ", 
+            "Highest Frequency": "HFREQ", "Lowest Frequency": "LFREQ",
+            "Frequency Count": "FREQC"
         }
 
         # Create domain dictionary
@@ -184,19 +192,25 @@ def main(args):
             d_ranges = None
             d_cat = ''
 
+        if comptype == "Dominant Component":
+            agg_label = agg_d[comptype]
+        else:
+            agg_label = agg_d[agg_meth]
+
         if not custom_b:
-            tab_n = f"{sdv_dict['resultcolumnname']}_{agg_d[agg_meth]}_{d_cat}"
+
+            tab_n = f"{sdv_dict['resultcolumnname']}_{agg_label}_{d_cat}"
             col_n = tab_n
             if sdv_dict['attributelogicaldatatype'] == 'Integer':
-                prop_dtype0 = 'LONG # #'
+                prop_dtype0 = ['LONG', '#', '#']
                 prec = 0
             elif sdv_dict['attributelogicaldatatype'] == 'Float':
-                prop_dtype0 = 'FLOAT # #'
+                prop_dtype0 = ['FLOAT', '#', '#']
                 prec = sdv_dict['attributeprecision']
             else:
-                prop_dtype0 = (
-                    f"TEXT # {sdv_dict.get('attributefieldsize') or 254}"
-                )
+                prop_dtype0 = ['TEXT', '#', 
+                               f"{sdv_dict.get('attributefieldsize') or 254}"
+                ]
                 prec = None
         else:
             if lev1 == 'interp':
@@ -205,6 +219,7 @@ def main(args):
                 # get Result Column Name (resultcolumnname)
                 q = f"nasisrulename = '{att_col}'"
                 q = q.replace("''", "'")
+                prop_dtype = ''
 
                 db_p = f"{gdb_p}/sdvattribute"
                 with (arcpy.da.SearchCursor(
@@ -212,8 +227,8 @@ def main(args):
                 ) as sCur):
                     col_stub = next(sCur)
                 if col_stub:
-                    col_n = f"{col_stub[0]}_{agg_d[agg_meth]}"
-                    tab_n = f"ag_{col_stub[0]}_{agg_d[agg_meth]}"
+                    col_n = f"{col_stub[0]}_{agg_label}"
+                    tab_n = f"ag_{col_stub[0]}_{agg_label}"
                 else:
                     att_col2 = att_col[att_col.index('-') + 2:]
                     # find all capitalized words
@@ -225,29 +240,31 @@ def main(args):
                         [w[:2] + w[2:].translate(tt)[0] + w.translate(tt)[-1]  
                         if len(w)>4 else w for w in caps]
                     )
-                    tab_n = f"ag_{trunk}_{agg_d[agg_meth]}"
-                    col_n = f"{trunk}_{agg_d[agg_meth]}"
-                prop_dtype0 = 'TEXT # 254'
-                prop_dtype1 = 'Float # #'
+                    tab_n = f"ag_{trunk}_{agg_label}"
+                    col_n = f"{trunk}_{agg_label}"
+                prop_dtype0 = ['TEXT', '#', 254]
+                prop_dtype1 = ['Float', '#', '#']
                 prec = 2
             else:
                 # if integer or float make _class field TEXT of length 1
                 # if TEXT make _val field short integer
                 # only 2 SDV table columns both integer and have a domain
-                tab_n = f"ag_{table}_{att_col}_{agg_d[agg_meth]}_{d_cat}"
-                col_n = f"{att_col}_{agg_d[agg_meth]}_{d_cat}"
+                tab_n = f"ag_{table}_{att_col}_{agg_label}_{d_cat}"
+                col_n = f"{att_col}_{agg_label}_{d_cat}"
                 if sdv_dict[1] == 'Integer':
                     prop_dtype = 'Numeric'
-                    prop_dtype1 = 'LONG # #'
+                    prop_dtype1 = ['LONG', '#', '#']
                     prec = 0
+                    prop_dtype0 = None
                 elif sdv_dict[1] == 'Float':
                     prop_dtype = 'Numeric'
-                    prop_dtype1 = 'FLOAT # #'
+                    prop_dtype1 = ['FLOAT', '#', '#']
                     prec = sdv_dict[4]
+                    prop_dtype0 = None
                 else:
                     prop_dtype = 'Text'
-                    prop_dtype0 = f'TEXT # {sdv_dict[3] or 254}'
-                    prop_dtype1 = 'SHORT # #'
+                    prop_dtype0 = ['TEXT', '#', f'{sdv_dict[3] or 254}']
+                    prop_dtype1 = ['SHORT', '#', '#']
                     prec = None
 
         tab_n = tab_n.strip('_')#.replace(' ','')
@@ -264,11 +281,11 @@ def main(args):
         else:
             gssurgo_v = '1.0'
         if gssurgo_v == '2.0':
-            mk_dtype = "LONG # #"
+            mk_dtype = ["LONG", '', '']
             q = ""
             delim = ", "
         else:
-            mk_dtype = "TEXT # 30"
+            mk_dtype = ["TEXT", '', 30]
             q = "'"
             delim = "', '"
             # Read in interp keys
@@ -276,52 +293,10 @@ def main(args):
         interpk = None
         rulek = None
         
-        if arcpy.ListTables(f"{gdb_p}/{tab_n}"):
-            arcpy.management.Delete(f"{gdb_p}/{tab_n}")
-        arcpy.management.CreateTable(gdb_p, tab_n)
-        if lev1 == "interp": 
-            #fuzzy_b and agg_meth in ('Least Limiting', 'Most Limiting'): #if 
-            arcpy.management.AddFields(
-            in_table=f"{gdb_p}/{tab_n}",
-            field_description=(
-                f"AREASYMBOL TEXT # 20 # #;"
-                f"MUKEY {mk_dtype} # #;"
-                f"COMPPCT_R SHORT # # # #;"
-                f"class_{col_n} {prop_dtype0} # #;"
-                f"val_{col_n} {prop_dtype1} # #"),
-            template=None
-            )
-            fields = [
-                'AREASYMBOL', 'MUKEY', 'COMPPCT_R', 
-                'class_' + col_n, 'val_' + col_n
-            ]
-        elif prop_dtype == 'Text':
-            arcpy.management.AddFields(
-            in_table=f"{gdb_p}/{tab_n}",
-            field_description=(
-                f"AREASYMBOL TEXT # 20 # #;"
-                f"MUKEY {mk_dtype} # #;"
-                f"COMPPCT_R SHORT # # # #;"
-                f"prop_{col_n} {prop_dtype0} # #;"
-                f"seq_{col_n} {prop_dtype1} # #"),
-            template=None
-            )
-            fields = [
-                'AREASYMBOL', 'MUKEY', 'COMPPCT_R', 
-                'prop_' + col_n, 'seq_' + col_n
-            ]
-        # Numeric
-        else:
-            arcpy.management.AddFields(
-                in_table=f"{gdb_p}/{tab_n}",
-                field_description=(
-                    f"AREASYMBOL TEXT # 20 # #;"
-                    f"MUKEY {mk_dtype} # #;"
-                    f"COMPPCT_R SHORT # # # #;"
-                    f"prop_{col_n} {prop_dtype1} # #"),
-                template=None
-            )
-            fields = ['AREASYMBOL', 'MUKEY', 'COMPPCT_R', 'prop_' + col_n]
+        sym_fld, fields = bld_table(
+            gdb_p, tab_n, col_n, lev1, agg_meth,
+            mk_dtype, prop_dtype, prop_dtype0, prop_dtype1
+        )
 
         # Dynamically define SQL where statement
         if primNOT:
@@ -338,14 +313,18 @@ def main(args):
             # sometimes they have single quotes already and get double bagged
             atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
-            prim_str = f"""{primNOT} IN ('{atts_delim}')"""
+            prim_str = f""" {primNOT} IN ('{atts_delim}')"""
+        else:
+            prim_str = ''
         if sec_constraint:
             atts = sec_constraint.split(';')
             # sometimes they have single quotes already and get double bagged
             atts = [att.strip("'") for att in atts]
             atts_delim = "', '".join(atts)
-            sec_str = f"""{secNOT} IN ('{atts_delim}')"""
+            sec_str = f"""{sec_att} {secNOT} IN ('{atts_delim}')"""
             # arcpy.AddMessage(f"{sec_str=}")
+        else:
+            sec_str = ''
 
         # -- Secondary aggregation levels
         # Acquire cokeys of components that satisfy constraint
@@ -372,8 +351,8 @@ def main(args):
         if prim_constraint and table == 'component':
             comp_where1 += f" AND {att_col} {prim_str}"
         if sec_table == 'component':
-            comp_where1 += f" AND {sec_att} {sec_str}"
-            comp_where2 += f" AND {sec_att} {sec_str}"
+            comp_where1 += f" AND {sec_str}"
+            comp_where2 += f" AND {sec_str}"
 
         # When chorizon is primary table
         if d_ranges:
@@ -387,7 +366,7 @@ def main(args):
         if prim_constraint and table == 'chorizon':
             ch_where += f" AND {att_col} {prim_str}"
         if sec_table == 'chorizon':
-            ch_where += f" AND {sec_att} {sec_str}"
+            ch_where += f" AND {sec_str}"
             # arcpy.AddMessage(f"{ch_where=}")
         elif sec_table and ck_str:
             ch_where += f" AND {ck_str}"
@@ -416,9 +395,18 @@ def main(args):
 
         # -- Component Interpretation
         if lev1 == 'interp':
+            if comptype == "Dominant Component":
+                agg_meth = "Dominant Component"
             done = interp_node(
                 agg_meth, mapunits, d_cursor_args, gssurgo_v, gdb_p,
                 module_p, tie_break, fuzzy_b, att_col
+            )
+        # --- Component Flooding and Ponding
+        elif table == 'comonth':
+            done = comonth_node(
+                gdb_p, mapunits, comptype, agg_meth, att_col, domain_d, 
+                prim_str, sec_str, d_cursor_args, months, tie_break, module_p, 
+                gssurgo_v, q, delim, tab_n, fields
             )
 
         # -- Component Crop Yield
@@ -433,7 +421,7 @@ def main(args):
                     gdb_p + "/cocropyld", 
                     ['cokey', att_col],
                     where_clause=where_cl
-                    ) as sCur:
+                ) as sCur:
                     comp_ag_d = {ck: [prop,] for ck, prop in sCur}
                 if len(comp_ag_d) == 0:
                     comp_ag_d['Place holder'] = None
@@ -457,7 +445,7 @@ def main(args):
                 comp_ag_d = None
 
             agg_meth = agg_meth.lstrip("Absolute ")
-            if comtype == "Dominant Component":
+            if comptype == "Dominant Component":
                 agg_meth = "Dominant Component"
             done = comp_node(
                 agg_meth, mapunits, d_cursor_args, gssurgo_v, gdb_p,
@@ -469,9 +457,7 @@ def main(args):
             )
             
         if done:
-            if agg_meth == "Percent Present":
-                col_n = 'COMPPCT_R'
-            return (tab_n, col_n)
+            return (tab_n, sym_fld)
         else:
             return None
 
