@@ -62,7 +62,7 @@ class Param_Filter():
             if self.filt == "By Table":
                 params_d = {'INTERP_OFF': 0}
                 params_d[2] = [True, "By Table", '*', ["By Table"]]
-                params_d[4] = [True, None, '*', '*']
+                params_d[4] = [True, '*', '*', '*']
                 return params_d
             # elif ("Most Common Grouped (SDV Categories)" == filt
             #         or "Most Common as List (all SDV)" == filt):

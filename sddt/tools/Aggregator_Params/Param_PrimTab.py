@@ -31,7 +31,7 @@ class Param_PrimTab():
         self.tab_lab = '' 
         self.tabs = {
         'Component': 'component', 'Horizon': 'chorizon', 
-        'Interpretations': 'cointerp', 
+        'Interpretations': 'cointerp', 'Flooding & Ponding': 'comonth',
         'Component Crop Yield: Irrigated': 'cocropyld',
         'Component Crop Yield: Nonirrigated': 'cocropyld'
         } 
@@ -61,6 +61,11 @@ class Param_PrimTab():
                 params_d[5][3] = list(cols[tab_n].keys())
                 params_d['ALL_OFF'] = 6
 
+            elif tab_lab == 'Flooding & Ponding':
+                flds = ['Flooding Frequency', 'Ponding Frequency']
+                params_d[5] = [True, '*', '*', flds]
+                params_d[13] = [False, '*', '*', '*']
+
             elif(tab_lab in ('Component Crop Yield: Irrigated', 
                             'Component Crop Yield: Nonirrigated')):
                 col_prop = cols[tab_n]['Crop Name']
@@ -79,11 +84,6 @@ class Param_PrimTab():
                 params_d[10] = [True, 'Units', '*', ['Units',]]
                 params_d[11] = [True, None, '*', []]
                 params_d['ALL_OFF'] = 11
-            
-            elif tab_n == 'Component Month':
-                params_d['ALL_OFF'] = 6
-                # incomplete
-                params_d[13][0] = True
 
             else:
                 params_d['ALL_OFF'] = 6

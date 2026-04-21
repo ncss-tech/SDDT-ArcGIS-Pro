@@ -59,13 +59,37 @@ class Param_AgMeth():
                             'Component Crop Yield: Nonirrigated')):
                 # Already established by Param_PrimTab
                 return
-            if method == "Dominant Condition":
+            if tab_lab == 'Flooding & Ponding':
+                if 'flooding' in dom_n:
+                    dom_n2 = 'flooding_duration_class'
+                    fld2 = 'Flooding Duration'
+                else:
+                    dom_n2 = 'ponding_duration_class'
+                    fld2 = 'Ponding Duration'
+                dom_l = sorted(doms[dom_n2])
+                col_dom2 = [choice for _, choice in dom_l]
+
+                param_d[10] = [False, None, '*', [fld2]]
+                param_d[11] = [False, None, '*', col_dom2]
+                param_d[13] = [True, '*', '*', '*']
+
+                if method in ['Percent Present', 'Frequency Count']:
+                    param_d[9] = [True, None, '*', ['Flooding & Ponding']]
+                else:
+                    param_d[9] = [False, None, '*', ['Flooding & Ponding']]
+
+                if method in ["Dominant Condition", "Median Frequency"]:
+                    param_d[14] = [True, 'Higher', '*', '*']
+                else:
+                    param_d[14] = [False, '*', '*', '*']
+                    
+            if method in ["Dominant Condition", "Median Frequency"]:
                 # Tiebreak relavent
-                param_d[14] = [True, '*', '*', '*']
+                param_d[14] = [True, 'Higher', '*', '*']
             else:
                 param_d[14] = [False, '*', '*', '*']
             
-            if method == "Percent Present":
+            if method in ["Percent Present", "Frequency Count"]:
                 dom_l = sorted(doms[dom_n])
                 col_dom2 = [choice for _, choice in dom_l]
                 param_d[8] = [True, None, '*', col_dom2]

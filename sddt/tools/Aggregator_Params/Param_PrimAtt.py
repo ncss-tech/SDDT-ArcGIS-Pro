@@ -32,7 +32,7 @@ class Param_PrimAtt():
         # primary table: [available secondary tables]
         self.s_tabs = {
             'Component': ['Component',],
-            'Horizon': ['Horizon', 'Component'] 
+            'Horizon': ['Horizon', 'Component']
             #diagnostic horizons, landform, geomorph, ecosite, soil moisture
         }
         self.error = None
@@ -89,8 +89,10 @@ class Param_PrimAtt():
             # if not value table but something in list
             elif lc:
                 att = vl[0]
-            else:
+            elif vt:
                 att = vt[0]
+            # else:
+            #     att = vt
             
             if att != self.att:
                 self.att = att
@@ -119,11 +121,21 @@ class Param_PrimAtt():
                 param_d[10] = [False, '*', '*', '*']
                 param_d[11] = [False, '*', '*', '*']
                 param_d[12] = [False, '*', '*', '*']
+                param_d[13] = [False, '*', '*', '*']
                 param_d[16] = [False, '*', '*', '*']
                 param_d['ALL_OFF'] = 20
 
                 return param_d
-            
+            # Floding and Ponding
+            elif tab_lab == 'Flooding & Ponding':
+                method_l = ['Dominant Condition', 'Median Frequency',
+                            'Highest Frequency', 'Lowest Frequency', 
+                            'Percent Present', 'Frequency Count']
+                 
+                param_d[7] = [False, None, '*', method_l]
+                param_d[8] = [False, None, '*', '*']
+                param_d['ALL_OFF'] = 9
+
             # If Integer w/ unit or Float
             elif(((dtype == "Integer") and itype) 
             or (dtype == "Float")):
@@ -138,6 +150,7 @@ class Param_PrimAtt():
                 param_d[9] = [True, None, '*', self.s_tabs[tab_lab]]
                 param_d[10] = [False, '*', '*', '*']
                 param_d[11] = [False, '*', '*', '*']
+                param_d[13] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
 
@@ -147,18 +160,22 @@ class Param_PrimAtt():
                 #     "Percent Present"]
                 method_l = ["Dominant Condition", "Percent Present"]
                 param_d[7] = [False, None, '*', method_l]
+                param_d[8] = [False, '*', '*', '*']
                 param_d[9] = [False, '*', '*', '*']
                 param_d[10] = [False, '*', '*', '*']
                 param_d[11] = [False, '*', '*', '*']
+                param_d[13] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
 
             elif att:
                 method_l = ["Dominant Condition"]
                 param_d[7] = [False, "Dominant Condition", '*', method_l]
+                param_d[8] = [False, '*', '*', '*']
                 param_d[9] = [False, '*', '*', '*']
                 param_d[10] = [False, '*', '*', '*']
                 param_d[11] = [False, '*', '*', '*']
+                param_d[13] = [False, '*', '*', '*']
                 param_d[20] = [False, '*', '*', '*']
                 param_d[21] = [False, '*', '*', '*']
             else:

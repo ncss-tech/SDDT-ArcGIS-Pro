@@ -11,13 +11,17 @@ that don't require any other additional methods or characteristics
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/10/2026
+@modified 03/27/2026
     @by: Alexnder Stum
-@version 1.0
+@version 1.1
 
-
+# --- Update,
+- import calendar and use calendar.month_name
+# --- Update, v 1.1 3/27/2026
+- added param13 for the months parameter
 
 """
+import calendar
 import arcpy
 
 
@@ -53,6 +57,24 @@ def param12():
 
     return param
 
+
+def param13():
+    months = list(calendar.month_name)[1:]
+
+    param = arcpy.Parameter(
+        displayName="Select Month(s): select all or none for Annual",
+        name="month",
+        direction="Input",
+        parameterType="Optional",
+        datatype="GPString",
+        multiValue=True,
+        enabled=False
+    )
+    param.filter.list = months
+    # param.value = "Annual"
+
+    return param
+    
 
 def param14():
     param = arcpy.Parameter(

@@ -58,7 +58,15 @@ class Param_ComType():
             if comtype != self.comtype:
                 self.comtype = comtype
             
-            if self.comtype == "Dominant Component":
+            if "Flooding Frequency" in self.att or "Ponding Frequency" in self.att:
+                param_d[7] = [True, None, '*', method_l]
+                if self.comtype != "Dominant Component":
+                    # method_l.remove("Frequency Count")
+                    param_d[15] = [True, 0, '*', '*']
+                else:
+                    param_d[15] = [False, '*', '*', '*']
+
+            elif self.comtype == "Dominant Component":
                 # Percent cutoff not relavent
                 param_d[15] = [False, '*', '*', '*']
                 # carve out exception for month tables
@@ -71,7 +79,7 @@ class Param_ComType():
                     param_d[7] = [False, None, '*', method_l]
             else:
                 param_d[7] = [True, None, '*', method_l]
-                param_d[15] = [True, 0, '*', '*']
+                param_d[15] = [True, '*', '*', '*']
 
             self.error = None
             return param_d

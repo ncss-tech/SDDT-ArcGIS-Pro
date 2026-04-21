@@ -42,6 +42,7 @@ class Param_PrimCon():
 
 
     def update(self, unit_l):
+        """Only called if Component Crop Yield"""
         try:
             unit_l = list(unit_l)
             if len(unit_l) == 1:
