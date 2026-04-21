@@ -398,7 +398,7 @@ def comonth_node(
         # All 12 months
         else:
             nm = 12
-            m_str = f"month IN ('{"', '".join(list(calendar.month_name)[1:])}')"
+            m_str = f"""month IN ('{"', '".join(list(calendar.month_name)[1:])}')"""
             
         where_clause = m_str
         if ag_meth in ("Frequency Count", "Percent Present"):
