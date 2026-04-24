@@ -14,12 +14,16 @@ mukey field.
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/10/2026
+@modified 04/24/2026
     @by: Alexnder Stum
-@version 1.0
+@version 1.1
 
 
-
+# --- Updated 4/24/2026, v 1.1
+-Attributes that ended in 'r' we're getting truncated, replaced rstrip('_r')
+with removesuffix('_r')
+- Replaced a nested for-loop with list comprehension to create list of 
+SSURGO features
 """
 import arcpy
 import re
@@ -103,13 +107,9 @@ class Param_InDB():
         arcpy.env.workspace = self.path
         feats = arcpy.ListFeatureClasses()
         feats.extend(arcpy.ListRasters())
-        ssurgo_feats = []
-        for lyr in feats:
-            lyr_flds = arcpy.Describe(lyr).fields
-            for fld in lyr_flds:
-                if fld.name.lower() == 'mukey':
-                    ssurgo_feats.append(lyr)
-                    break
+        ssurgo_feats = [lyr for lyr in feats 
+                        for fld in arcpy.Describe(f'{self.path}/{lyr}').fields 
+                        if fld.name.lower() == 'mukey']
         return ssurgo_feats
     
     
@@ -189,7 +189,7 @@ class Param_InDB():
                     if col_n[-2:] == '_r':
                         col_lab = col_lab.replace(' - Representative Value', '')
                         self.RV[col_lab] = True
-                        col[2] = col_n.rstrip('_r')
+                        col[2] = col_n.removesuffix('_r')
                         tab_d[col_lab] = col[2:]
                     # if column name is not low or high
                     elif (col_n[-2:] != '_l') and (col_n[-2:] != '_h'):

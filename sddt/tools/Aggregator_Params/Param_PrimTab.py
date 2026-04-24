@@ -63,8 +63,9 @@ class Param_PrimTab():
 
             elif tab_lab == 'Flooding & Ponding':
                 flds = ['Flooding Frequency', 'Ponding Frequency']
-                params_d[5] = [True, '*', '*', flds]
+                params_d[5] = [True, None, '*', flds]
                 params_d[13] = [False, '*', '*', '*']
+                # params_d['ALL_OFF'] = 6
 
             elif(tab_lab in ('Component Crop Yield: Irrigated', 
                             'Component Crop Yield: Nonirrigated')):

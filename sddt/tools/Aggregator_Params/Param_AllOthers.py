@@ -198,13 +198,12 @@ def param21():
 
 def param22():
     param = arcpy.Parameter(
-        displayName="Find absoluste Horizon Min or Max",
-        name="abs_min_max",
+        displayName="Been Run",
+        name="postex",
         direction="Input",
         parameterType="Optional",
         datatype="GPBoolean",
         enabled=False,
-        category='Optional'
     )
     param.value = False
 
