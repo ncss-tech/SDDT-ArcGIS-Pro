@@ -17,10 +17,12 @@ level (mukey).
     @email: alexander.stum@usda.gov
 @modified 04/24/2026
     @by: Alexnder Stum
-@version 1.5.2
+@version 1.5.3
 
+# --- Updated 4/24/2026, v 1.5.3
+- Crop yield parameters were getting flipped off
 # --- Updated 4/24/2026, v 1.5.2
-- When the tool is run the first time in a session, it failed to propertly
+- When the tool is run the first time in a session, it failed to properly
 name and symbolize. Should be fixed now.
 # --- Updated 4/24/2026, v 1.5.2
 - Enabled joins with raster layers, ironed out issues with joining and 
@@ -64,7 +66,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.5.1"
+version = "1.5.3"
 
 import logging
 import sys
@@ -409,7 +411,7 @@ class Aggregator(object):
                     stab_lab, cols, tab_lab, Aggregator.param_primatt.att
                 )
                 self.param_updater(params, params_d)
-            else:
+            elif not (params[4].value and 'Component Crop Yield' in params[4].value):
                 params_d = {10: [False, None, '*', '*']}
                 params_d[11] = [False, None, '*', '*']
                 self.param_updater(params, params_d)
