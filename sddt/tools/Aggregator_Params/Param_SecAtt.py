@@ -49,7 +49,8 @@ class Param_SecAtt():
 
             if(prim_tab_lab in ('Component Crop Yield: Irrigated', 
                            'Component Crop Yield: Nonirrigated')):
-                # params_d[10] = [True, '*', '*', crp_units]
+                # params_d[10] = [True, '*', '*', '*']
+                # params_d[11] = [True, '*', '*', '*']
                 self.error = None
                 return params_d
 

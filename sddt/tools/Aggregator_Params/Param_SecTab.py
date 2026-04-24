@@ -47,13 +47,15 @@ class Param_SecTab():
             if tab_lab != self.tab_lab:
                 self.tab = tab_lab
 
+            if(prim_tab_lab in ('Component Crop Yield: Irrigated', 
+                            'Component Crop Yield: Nonirrigated')):
+                # params_d[10] = [True, '*', '*', '*']
+                # params_d[11] = [True, '*', '*', '*']
+                return params_d
+            
             if not tab_lab:
                 params_d[10] = [False, None, '*', []]
                 params_d[11] = [False, None, '*', []]
-                return params_d
-
-            if(prim_tab_lab in ('Component Crop Yield: Irrigated', 
-                            'Component Crop Yield: Nonirrigated')):
                 return params_d
             
             if(tab_lab == "Flooding & Ponding" 

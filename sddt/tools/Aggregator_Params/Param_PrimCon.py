@@ -49,10 +49,11 @@ class Param_PrimCon():
                 unit = unit_l[0]
             else:
                 unit = None
-            param_d = {11: [True, unit, '*', unit_l]}
+            params_d = {10: [True, '*', '*', '*']}
+            params_d[11] = [True, unit, '*', unit_l]
 
             self.error = None
-            return param_d
+            return params_d
         except:
             self.error = pyErr('Param_PrimCon')
             return {}
