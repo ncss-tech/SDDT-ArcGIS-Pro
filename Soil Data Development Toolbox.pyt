@@ -15,10 +15,16 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 04/20/2026
+@modified 04/24/2026
     @by: Alexnder Stum
-@version 1.5
+@version 1.5.1
 
+# --- Updated 4/24/2026, v 1.5.1
+- Enabled joins with raster layers, ironed out issues with joining and 
+symbolizing mulitple times to the same vector layer. 
+-But Pro hangs after the Execute function even though all lines have 
+executed successfully. Added a sys.exit() argument which unhangs it but results
+in failed signal. 
 # --- Updated 4/20/2026, v 1.5
 - Added Flooding and Ponding frequency
 - Added new parameter Which Components which enables for a selection of
@@ -55,12 +61,13 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.5"
+version = "1.5.1"
 
 import logging
 import sys
 import os
 from importlib import reload
+import gc
 
 pyt_path = os.path.abspath(__file__)
 sys.path.append(pyt_path)
@@ -124,6 +131,7 @@ class Aggregator(object):
     error = ''
     ag_out = ''
     in_feat = ''
+    post_exe = False
 
     agg_d = {
             "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
@@ -162,6 +170,9 @@ class Aggregator(object):
 
     def param_updater(self, params, params_d):
         # params_d: param id: [enabled, value, values, filter list]
+
+        #### ALL_NONE ####
+
         if 'INTERP_OFF' in params_d:
             if params[4].value == 'Interpretations':
                 params_d['ALL_OFF'] = 5
@@ -333,6 +344,8 @@ class Aggregator(object):
 
             # Primary Table hass be selected
             if (tab_lab := params[4].value) and not params[4].hasBeenValidated:
+                if not Aggregator.param_indb.cols.get(tab_lab):
+                    Aggregator.param_indb.update(params[0].valueAsText)
                 params_d = Aggregator.param_primtab.update(
                     tab_lab,
                     Aggregator.param_indb.cols, Aggregator.param_indb.doms
@@ -493,12 +506,11 @@ class Aggregator(object):
     def execute(self, params, messages):
         """The source code of the tool."""
         arcpy.AddMessage(f"Tool_Aggregator {version=}")
+        Aggregator.post_exe = False
 
         import sddt.analyze.aggregator
         reload(sddt.analyze.aggregator)
         # from sddt.analyze.aggregator import main as aggregator
-
-        Aggregator.join_feat = params[1].value
         
         if params[2].value == "By Table":
             tab_lab = params[4].value
@@ -601,27 +613,101 @@ class Aggregator(object):
             output = f"{gdb_p}\\{ag_out[0]}"
             Aggregator.ag_out = ag_out
             arcpy.AddMessage(f"Summary table has been created: {output}")
-         
-        return
+
+            arcpy.env.addOutputsToMap = True
+            arcpy.env.workspace = gdb_p
+            aprx = arcpy.mp.ArcGISProject("CURRENT")
+            map = aprx.activeMap
+            tab_n = Aggregator.ag_out[0]
+            
+            if (in_feat := params[1].valueAsText):
+                in_feat_p = f"{gdb_p}\\{in_feat}"
+                dtype = arcpy.Describe(in_feat_p).datasetType
+
+                if dtype == 'FeatureClass':
+                    join_lyr = arcpy.management.AddJoin(
+                        in_layer_or_view=in_feat,
+                        in_field='MUKEY',
+                        join_table=tab_n,
+                        join_field='MUKEY'
+                    ).getOutput(0)
+                    arcpy.AddMessage(f"{tab_n} has been joined to {in_feat}")
+
+                else:
+                    # Current versions of Pro error and/or crash when joins
+                    # are scripted between text fields
+                    arcpy.management.AddField(
+                        in_table=tab_n,
+                        field_name="muint",
+                        field_type="LONG"
+                    )
+                    arcpy.management.CalculateField(
+                        in_table=tab_n,
+                        field="muint",
+                        expression="!MUKEY!",
+                        expression_type="PYTHON3"
+                    )
+
+                    # arcpy.SetProgressor('Creating join')
+                    join_lyr = arcpy.management.AddJoin(
+                        in_layer_or_view=in_feat,
+                        in_field='Value',
+                        join_table=tab_n,
+                        join_field='muint'
+                    ).getOutput(0)
+                    arcpy.AddMessage(f"{tab_n} has been joined to {in_feat}")
+                    arcpy.AddMessage(
+                        "\nYou can manually symbolize on "
+                        f"{tab_n}.{Aggregator.ag_out[1]} to see result"
+                    )
+                
+                map.addLayer(join_lyr)
+                
+                self.postExecute(params)
+                self.post_exe = True
+            else: # Just add table
+                tab_p = os.path.normpath(f"{gdb_p}\\{tab_n}")
+                tab_mp = arcpy.mp.Table(tab_p)
+                map.addTable(tab_mp)
+
+            try:
+                sys.exit(0)
+            except:
+                arcpy.AddMessage(
+                    "\n****Ignore failed notification****\n"
+                    "If there are no printed Error messages "
+                    "and a new soils layer was added to the map, "
+                    "Soil Data Development completed successfully "
+                )
+                sys.exit(0)
+            
 
     def postExecute(self, params):
         """This method takes place after outputs are processed and
         added to the display."""
         # Add table to map
         try:
+            if Aggregator.post_exe:
+                return
+            logger = logging.getLogger(__name__)
+            file_path = os.path.abspath(__file__)
+            path = os.path.dirname(file_path) + '/post.log'
+            # logger = logging.getLogger(__name__)
+            logging.basicConfig(
+                filename=path, level=logging.DEBUG, filemode='w',
+                format='%(asctime)s - %(levelname)s - %(message)s'
+            )
+            logger.info(f"{Aggregator.param_primatt.att= }")
             aprx = arcpy.mp.ArcGISProject("CURRENT")
 
             if Aggregator.ag_out:
                 gdb_p = params[0].valueAsText
                 tab_n = Aggregator.ag_out[0]
-                tab_p = os.path.normpath(f"{gdb_p}\\{tab_n}")
-                
-                map = aprx.activeMap
-                tab_mp = arcpy.mp.Table(tab_p)
-                map.addTable(tab_mp)
 
+                map = aprx.activeMap
                 # Add Soil Map
                 if (in_feat := params[1].valueAsText):
+                    arcpy.env.workspace = gdb_p
                     in_feat_p = f"{gdb_p}\\{in_feat}"
                     tab_lab = params[4].value
 
@@ -647,7 +733,7 @@ class Aggregator(object):
                     else:
                         depths = None
                     sym_fld = f'{tab_n}.{Aggregator.ag_out[1]}'
-
+                    logger.info(f"{sym_fld= }")
                     # Create layer name
                     if depths:
                         dmin = depths[0][0]
@@ -655,27 +741,23 @@ class Aggregator(object):
                         d_cat = f"{dmin} to {dmax} cm"
                     else:
                         d_cat = ''
-                
+
+                    if not params[7].enabled:
+                        agg_meth = 'Dominant Component'
                     soil_map_n = f"{att} {d_cat} {Aggregator.agg_d[agg_meth]}"
                     dtype = arcpy.Describe(in_feat_p).datasetType
+                    logger.info(f"{soil_map_n= }")
 
                     if dtype == 'FeatureClass':
-                        soil_lyr = arcpy.management.MakeFeatureLayer(
-                            in_feat_p, soil_map_n
-                        )
-                        soil_lyr_obj = soil_lyr.getOutput(0)
-                        
-                        arcpy.SetProgressor('Creating join')
-                        join_out = arcpy.management.AddJoin(
-                            in_layer_or_view=soil_lyr_obj,
-                            in_field='MUKEY',
-                            join_table=tab_mp,
-                            join_field='MUKEY'
-                        )
-                        soil_sym = soil_lyr_obj.symbology
+                        # # This layer is not added to ToC
+                        # soil_lyr = map.addDataFromPath(in_feat_p)
+                        lyr = map.listLayers()[0]
+                        lyr.name = soil_map_n
+                        soil_sym = lyr.symbology
 
-                        # # Data type of symbology field
-                        fld = arcpy.ListFields(soil_lyr_obj, sym_fld)[0]
+                        # Data type of symbology field
+                        fld = arcpy.ListFields(lyr, sym_fld)[0]
+                        logger.info(f"{fld.name= }")
                         if fld.type == 'String':
                             arcpy.SetProgressor('Applying Symbology')
                             soil_sym.updateRenderer('UniqueValueRenderer')
@@ -688,55 +770,31 @@ class Aggregator(object):
                             soil_sym.renderer.classificationField = fld.name
                             soil_sym.renderer.breakCount = 6
 
-                        soil_lyr_obj.symbology = soil_sym
-                        add_out = map.addLayer(soil_lyr_obj)
-
-                        # del soil_sym, soil_lyr_obj, add_out, soil_lyr
-
+                        lyr.symbology = soil_sym
                     # Raster
                     else:
-                        soil_map_n = in_feat + " with join"
-                        soil_lyr = arcpy.management.MakeRasterLayer(
-                            in_feat_p, soil_map_n
-                        )
-                        soil_lyr_obj = soil_lyr.getOutput(0)
+                        # pass
+                        lyr = map.listLayers(in_feat)[0]
+                        lyr.name = soil_map_n
+                        # soil_sym = lyr.symbology
+                        # fld = arcpy.ListFields(lyr, sym_fld)[0]
 
-                        # Join
-                        join_out = arcpy.management.AddJoin(
-                            in_layer_or_view=soil_lyr_obj,
-                            in_field='MUKEY',
-                            join_table=tab_mp,
-                            join_field='MUKEY'
-                        )
-
-                            # Map it
-                            # As of version 3.6 ArcGIS Pro crashes when arcpy 
-                            # methods of symbolizing a raster on a join field
-                            # are applied
-                            # soil_sym.updateColorizer('RasterClassifyColorizer')
-                            # soil_sym.colorizer.classificationField = sym_fld
-                            # soil_sym.colorizer.breakCount = 6
-                            # soil_sym.colorizer.colorRamp = aprx.listColorRamps(
-                            #     'Distance'
-                            # )[0]
-                            # sym_fld = 'ag_component_taxtempcl_DCP.seq_taxtempcl_DCP'
-
-                            # soil_lyr_obj.symbology = soil_sym
-                        add_out = map.addLayer(soil_lyr_obj)
-                del map
-            del aprx
+                        # soil_sym.updateColorizer('RasterClassifyColorizer')
+                        # soil_sym.colorizer.classificationField = fld
+                        # soil_sym.colorizer.breakCount = 6
+                        # soil_sym.colorizer.colorRamp = aprx.listColorRamps(
+                        #     'Distance'
+                        # )[0]
+                        # lyr.symbology = soil_sym
+            # logging.shutdown()  
+            return
         except:
-            file_path = os.path.abspath(__file__)
-            path = os.path.dirname(file_path) + '/post.log'
-            # logger = logging.getLogger(__name__)
-            logging.basicConfig(
-                filename=path, level=logging.ERROR, filemode='w',
-                format='%(asctime)s - %(levelname)s - %(message)s'
-            )
+            
+            
             # logger.info('Started')
-            logging.exception(pyErr('postExecute'))
-
+            gc.collect()
+            logger.exception(pyErr('postExecute'))
+            # logging.shutdown()
             pass
             # arcpy.AddError(pyErr('postExecute'))
-        return
         
