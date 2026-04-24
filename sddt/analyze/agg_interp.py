@@ -6,9 +6,12 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/20/2026
+@modified 04/24/2026
     @by: Alexnder Stum
-@Version: 0.1
+@Version: 0.2
+# --- Update 04/24/2026; v 0.2
+- When map unit not found in cointerp table, it was looking for cokeys 
+Now it populates these with an empty string
 """
 
 
@@ -132,7 +135,7 @@ def interp_node(
                         [mk, ck, pct, cint[1], cint[0]] 
                         for _, ck, pct in comps 
                         if(cint := cointerp_d.get(ck))
-                    ] or [[mk, ck, None, 0, 'Not Rated'],]
+                    ] or [[mk, None, None, 0, ''],]
                     # Determine which interp class is dominant
                     # Where compsition tied, max valued class returned
                     if len(cointerps) > 1:
