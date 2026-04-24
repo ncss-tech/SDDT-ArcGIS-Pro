@@ -214,33 +214,6 @@ def horzModal(d_ranges: tuple[tuple[float, float],],
         arcpy.AddError(pyErr(func))
         raise
         return False
-    
-
-def sumby(cats: list[str], values: list[int]) -> dict[str, int]:
-    """Sum horizion thickness by category
-
-    Parameters
-    ----------
-    cats : list[str]
-        Nominal class
-    values : list[int]
-        horizon thickness within depth layer
-
-    Returns
-    -------
-    dict[str, int]
-        Key is the nominal class, value is the summed thickness
-    """
-    grpby = {}
-    # category and thickness
-    for cat, dp in zip(cats, values):
-        if cat is None:
-            cat = 'unpopulated'
-        if cat in grpby:
-            grpby[cat] += dp
-        else:
-            grpby[cat] = dp
-    return grpby
 
 
 def horzByLayer(

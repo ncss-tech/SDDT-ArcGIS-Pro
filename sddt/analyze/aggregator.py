@@ -137,6 +137,7 @@ def main(args):
         arcpy.env.workspace = gdb_p
         arcpy.env.overwriteOutput = True
 
+
         if not agg_meth and comptype == 'Dominant Component':
             agg_meth = 'Dominant Component'
 
@@ -220,7 +221,6 @@ def main(args):
                 q = f"nasisrulename = '{att_col}'"
                 q = q.replace("''", "'")
                 prop_dtype = ''
-
                 db_p = f"{gdb_p}/sdvattribute"
                 with (arcpy.da.SearchCursor(
                     db_p, "resultcolumnname", where_clause=q
@@ -444,7 +444,7 @@ def main(args):
             elif table == 'component':
                 comp_ag_d = None
 
-            agg_meth = agg_meth.lstrip("Absolute ")
+            agg_meth = agg_meth.removeprefix("Absolute ")
             if comptype == "Dominant Component":
                 agg_meth = "Dominant Component"
             done = comp_node(
