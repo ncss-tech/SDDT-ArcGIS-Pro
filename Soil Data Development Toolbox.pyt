@@ -17,9 +17,12 @@ level (mukey).
     @email: alexander.stum@usda.gov
 @modified 04/24/2026
     @by: Alexnder Stum
-@version 1.5.1
+@version 1.5.2
 
-# --- Updated 4/24/2026, v 1.5.1
+# --- Updated 4/24/2026, v 1.5.2
+- When the tool is run the first time in a session, it failed to propertly
+name and symbolize. Should be fixed now.
+# --- Updated 4/24/2026, v 1.5.2
 - Enabled joins with raster layers, ironed out issues with joining and 
 symbolizing mulitple times to the same vector layer. 
 -But Pro hangs after the Execute function even though all lines have 
@@ -118,7 +121,6 @@ import arcpy
 # from .. import pyErr
 # from .. import byKey
 from sddt import pyErr
-from sddt import byKey
 
 from sddt.tools.Aggregator_Params import *
 from sddt.tools.Aggregator_Params import Param_AllOthers
@@ -132,6 +134,7 @@ class Aggregator(object):
     ag_out = ''
     in_feat = ''
     post_exe = False
+    att = ''
 
     agg_d = {
             "Dominant Condition": 'DCD', "Dominant Component": 'DCP', 
@@ -547,7 +550,7 @@ class Aggregator(object):
                     att_col += '_h'
                 else:
                     att_col += '_r'
-
+        Aggregator.att = att_col
         if tab_n.startswith('ch'):
             depths = params[12].value
             # abs_mm = params[22].value
@@ -719,9 +722,9 @@ class Aggregator(object):
                             else:   
                                 att = 'Nirr Yield'
                         else:
-                            att = Aggregator.param_primatt.att
+                            att = Aggregator.att
                     else:
-                        att = params[5].values[-1]
+                        att = Aggregator.att
                         ## self not available
                         sdv_row = Aggregator.param_sdvcat[att] 
                         tab_lab = sdv_row['attributetablename']
@@ -795,6 +798,6 @@ class Aggregator(object):
             gc.collect()
             logger.exception(pyErr('postExecute'))
             # logging.shutdown()
-            pass
+            return
             # arcpy.AddError(pyErr('postExecute'))
         
