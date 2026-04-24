@@ -6,10 +6,11 @@
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 03/26/2026
+@modified 04/24/2026
     @by: Alexnder Stum
-@Version: 0.1
-
+@Version: 0.2
+# --- Updated 4/24/2026, v 0.2
+- Percent Present aggregation: Indexing error populating PP property field
 
 """
 import calendar
@@ -233,7 +234,7 @@ def pp_f(freq_mast_a, domain_d):
         invert_d = {v: k for k, v in domain_d.items()}
         index = np.where(freq_mast_a[1:, :-1].sum(axis=1))[0]
         if index.size:
-            f_classes = [invert_d[i] for i in index]
+            f_classes = [invert_d[i + 1] for i in index]
             class_str = ', '.join(f_classes)
             pcts = freq_mast_a[:, -1].sum()
         else:
