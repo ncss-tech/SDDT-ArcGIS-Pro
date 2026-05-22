@@ -69,7 +69,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.5.3"
+version = "1.5.4"
 
 import logging
 import sys
