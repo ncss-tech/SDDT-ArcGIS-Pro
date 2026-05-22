@@ -15,10 +15,13 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 04/24/2026
+@modified 05/22/2026
     @by: Alexnder Stum
-@version 1.5.3
+@version 1.5.4
 
+# --- Updated 5/22/2026, v 1.5.4
+- fixed logic error that prevented user from specifying secondary constraints
+with continuous properties
 # --- Updated 4/24/2026, v 1.5.3
 - Crop yield parameters were getting flipped off
 # --- Updated 4/24/2026, v 1.5.2
@@ -411,7 +414,10 @@ class Aggregator(object):
                     stab_lab, cols, tab_lab, Aggregator.param_primatt.att
                 )
                 self.param_updater(params, params_d)
-            elif not (params[4].value and 'Component Crop Yield' in params[4].value):
+
+            elif (not (params[4].value 
+                       and 'Component Crop Yield' in params[4].value) and
+                       not params[9].value):
                 params_d = {10: [False, None, '*', '*']}
                 params_d[11] = [False, None, '*', '*']
                 self.param_updater(params, params_d)
