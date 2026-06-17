@@ -8,10 +8,12 @@ Build Parrallel
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/05/2026
+@modified 06/17/2026
     @by: Alexnder Stum
-@version: 0.3
+@version: 0.4
 
+# --- Update 06/17/2026; v 0.4
+- importing pyErr and arcpyErr functions from sddt module
 # --- Update 02/05/2026; v 0.3
 - Removed arcpyErr and pyErr functions, calling from sddt
 # ---
@@ -23,7 +25,9 @@ Updated 10/11/22; v 0.2
 import arcpy
 import gc
 import os
-    
+
+from .. import pyErr
+from .. import arcpyErr
 
 def dissolve_ssa(mu_p: str, epsg: int, tm: str) -> list:
     """This function stages soil polygon features for insertion.
@@ -131,9 +135,9 @@ def append_ssa(feat_p: str, fields: list[str,], epsg: int, tm: str) -> list:
         #func = sys._getframe(  ).f_code.co_name
         func = 'build'
         msgs = arcpyErr(func)
-        return [2, msgs]
+        return [-1, msgs]
     except:
         #func = sys._getframe(  ).f_code.co_name
         func = 'build'
         msgs = pyErr(func)
-        return [3, msgs]
+        return [-1, msgs]

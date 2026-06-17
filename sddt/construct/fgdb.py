@@ -9,10 +9,12 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 02/05/2026
+@modified 06/17/2026
     @by: Alexnder Stum
-@version: 0.9
+@version: 0.9.1
 
+# --- Update 06/17/2026; v 0.9.1
+- Error handling during big_append
 # --- Update 02/05/2026; v 0.9
 - Removed arcpyErr and pyErr functions, calling from sddt
 - tweaked build_parallel import with relative .
@@ -944,6 +946,9 @@ def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
                     # yield results and params
                     original_input = futures.pop(fut)
                     output = fut.result()
+                    if output[0] == -1:
+                        arcpy.AddError(output[1])
+                        exit()
                     for ssa_row in output:
                         iCur.insertRow(ssa_row)
                     del fut
