@@ -74,7 +74,7 @@ Updated 10/04/2024; v 0.3
 # --- Updated 10/08/2024
 - Updated Metadata elements
 """
-v = "0.9"
+v = "0.9.1"
 # Import system modules
 
 import concurrent.futures as cf
