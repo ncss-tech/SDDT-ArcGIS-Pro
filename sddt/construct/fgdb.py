@@ -9,10 +9,12 @@ Build gSSURGO File Geodatabase in ArcGIS Pro
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 06/17/2026
+@modified 06/18/2026
     @by: Alexnder Stum
-@version: 0.9.1
+@version: 0.9.2
 
+# --- Update 06/17/2026; v 0.9.2
+- Error handling during big_append, will try second time
 # --- Update 06/17/2026; v 0.9.1
 - Error handling during big_append
 # --- Update 02/05/2026; v 0.9
@@ -74,7 +76,7 @@ Updated 10/04/2024; v 0.3
 # --- Updated 10/08/2024
 - Updated Metadata elements
 """
-v = "0.9.1"
+v = "0.9.2"
 # Import system modules
 
 import concurrent.futures as cf
@@ -965,6 +967,7 @@ def big_append(feat_p: str, survey_l: list[str,], epsg: int, tm: str):
         del iCur
         arcpy.Delete_management("memory")
         gc.collect()
+        return ''
     except arcpy.ExecuteError:
         arcpy.Delete_management("memory")
         gc.collect()
@@ -1209,7 +1212,16 @@ def appendFeatures(
             elif feat_gdb != 'SAPOLYGON':
                 if len(feat_l) > 50:
                     feat_p = f"{gdb_p}/{feat_gdb}"
-                    big_append(feat_p, feat_l, inputXML.epsg, inputXML.tm)
+                    msg = big_append(feat_p, feat_l, inputXML.epsg, inputXML.tm)
+                    if msg:
+                        # try one more time
+                        arcpy.ClearEnvironment("workspace")
+                        arcpy.ResetEnvironments()
+                        msg = big_append(
+                            feat_p, feat_l, inputXML.epsg, inputXML.tm
+                        )
+                        if msg:
+                            exit()
                 else:
                     feat_p = f"{gdb_p}/{feat_gdb}"
                     arcpy.management.Append(feat_l, feat_p, "NO_TEST")
