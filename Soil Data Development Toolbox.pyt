@@ -15,10 +15,12 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 05/22/2026
+@modified 06/22/2026
     @by: Alexnder Stum
-@version 1.5.4
+@version 1.5.5
 
+# --- Updated 5/22/2026, v 1.5.5
+- Seem to have identified logic error that flipped post execute error
 # --- Updated 5/22/2026, v 1.5.4
 - fixed logic error that prevented user from specifying secondary constraints
 with continuous properties
@@ -69,7 +71,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.5.4"
+version = "1.5.5"
 
 import logging
 import sys
@@ -675,28 +677,30 @@ class Aggregator(object):
                 map.addLayer(join_lyr)
                 
                 self.postExecute(params)
-                self.post_exe = True
+                Aggregator.post_exe = True
             else: # Just add table
                 tab_p = os.path.normpath(f"{gdb_p}\\{tab_n}")
                 tab_mp = arcpy.mp.Table(tab_p)
                 map.addTable(tab_mp)
-
-            try:
-                sys.exit(0)
-            except:
-                arcpy.AddMessage(
-                    "\n****Ignore failed notification****\n"
-                    "If there are no printed Error messages "
-                    "and a new soils layer was added to the map, "
-                    "Soil Data Development completed successfully "
-                )
-                sys.exit(0)
+            arcpy.SetSeverityLevel(0)
+            # try:
+            #     raise
+            #     #sys.exit(0)
+            # except:
+                # arcpy.AddMessage(
+                #     "\n****Ignore failed notification****\n"
+                #     "If there are no printed Error messages "
+                #     "and a new soils layer was added to the map, "
+                #     "Soil Data Development completed successfully "
+                # )
+                # sys.exit(0)
             
 
     def postExecute(self, params):
         """This method takes place after outputs are processed and
         added to the display."""
         # Add table to map
+        arcpy.SetSeverityLevel(0)
         try:
             if Aggregator.post_exe:
                 return
