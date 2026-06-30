@@ -15,10 +15,13 @@ level (mukey).
     @title:  GIS Specialist & Soil Scientist
     @organization: National Soil Survey Center, USDA-NRCS
     @email: alexander.stum@usda.gov
-@modified 06/22/2026
+@modified 06/30/2026
     @by: Alexnder Stum
-@version 1.5.5
+@version 1.5.6
 
+# --- Updated 5/22/2026, v 1.5.6
+- Added wildcard to listLayer method, better acquires layer to symbolize
+- Turned on raster symbolizing, but still can't symbolize by join fld
 # --- Updated 5/22/2026, v 1.5.5
 - Seem to have identified logic error that flipped post execute error
 # --- Updated 5/22/2026, v 1.5.4
@@ -71,7 +74,7 @@ tools subpackage of the sddt package.
 - Added Join tool
 
 """
-version = "1.5.5"
+version = "1.5.6"
 
 import logging
 import sys
@@ -539,8 +542,8 @@ class Aggregator(object):
             tab_n = Aggregator.param_primtab.tabs[tab_lab]
             if not Aggregator.param_indb.cols.keys():
                 Aggregator.param_indb.update(
-                params[0].valueAsText
-            )
+                    params[0].valueAsText
+                )
             sdv_row = Aggregator.param_indb.cols[tab_n][att]
             custom_b = True
             att_col = sdv_row[0]
@@ -662,8 +665,9 @@ class Aggregator(object):
                     )
 
                     # arcpy.SetProgressor('Creating join')
+                    lyr = arcpy.management.MakeRasterLayer(in_feat_p)
                     join_lyr = arcpy.management.AddJoin(
-                        in_layer_or_view=in_feat,
+                        in_layer_or_view=lyr,
                         in_field='Value',
                         join_table=tab_n,
                         join_field='muint'
@@ -673,8 +677,9 @@ class Aggregator(object):
                         "\nYou can manually symbolize on "
                         f"{tab_n}.{Aggregator.ag_out[1]} to see result"
                     )
-                
+                    join_lyr.name = 'zzRasterzz'
                 map.addLayer(join_lyr)
+                
                 
                 self.postExecute(params)
                 Aggregator.post_exe = True
@@ -766,7 +771,7 @@ class Aggregator(object):
                     if dtype == 'FeatureClass':
                         # # This layer is not added to ToC
                         # soil_lyr = map.addDataFromPath(in_feat_p)
-                        lyr = map.listLayers()[0]
+                        lyr = map.listLayers(in_feat + '*')[0]
                         lyr.name = soil_map_n
                         soil_sym = lyr.symbology
 
@@ -789,18 +794,22 @@ class Aggregator(object):
                     # Raster
                     else:
                         # pass
-                        lyr = map.listLayers(in_feat)[0]
+                        # lyr = map.listLayers(in_feat + '*')[0]
+                        lyr = map.listLayers('zzRasterzz')[0]
                         lyr.name = soil_map_n
-                        # soil_sym = lyr.symbology
+                        # applying a symbology to rasters via python causes
+                        # Pro to hang
+                        soil_sym = lyr.symbology
                         # fld = arcpy.ListFields(lyr, sym_fld)[0]
-
-                        # soil_sym.updateColorizer('RasterClassifyColorizer')
-                        # soil_sym.colorizer.classificationField = fld
-                        # soil_sym.colorizer.breakCount = 6
-                        # soil_sym.colorizer.colorRamp = aprx.listColorRamps(
-                        #     'Distance'
-                        # )[0]
-                        # lyr.symbology = soil_sym
+                        # Currently Pro crashes when a joined field is 
+                        # specified in a raster via Python
+                        soil_sym.updateColorizer('RasterClassifyColorizer')
+                        # soil_sym.colorizer.classificationField = sym_fld
+                        soil_sym.colorizer.breakCount = 6
+                        soil_sym.colorizer.colorRamp = aprx.listColorRamps(
+                            'Distance'
+                        )[0]
+                        lyr.symbology = soil_sym
             # logging.shutdown()  
             return
         except:
